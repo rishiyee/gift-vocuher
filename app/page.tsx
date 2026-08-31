@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, isValid, parse } from "date-fns";
 import { toPng } from "html-to-image";
@@ -17,8 +17,13 @@ import { jsPDF } from "jspdf";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 
 const pages = ["Front", "Back"];
+
+function toTitleCase(value: string) {
+  return value.toLowerCase().replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
+}
 
 const initialContent = {
   frontTitle: "GIFT\nVOUCHER",
@@ -39,14 +44,14 @@ const initialContent = {
   email: "hello@chembarathi.com",
 };
 
-function EditorField({ id, label, value, multiline = false, onChange }: { id: string; label: string; value: string; multiline?: boolean; onChange: (value: string) => void }) {
+function EditorField({ id, label, value, multiline = false, disabled = false, onChange }: { id: string; label: string; value: string; multiline?: boolean; disabled?: boolean; onChange: (value: string) => void }) {
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       {multiline ? (
-        <Textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} />
+        <Textarea id={id} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
       ) : (
-        <Input id={id} value={value} onChange={(event) => onChange(event.target.value)} />
+        <Input id={id} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
       )}
     </Field>
   );
@@ -89,6 +94,7 @@ export default function Home() {
   const selectedInclusions = [content.candlelightDinner && "a candlelight dinner", content.flowerBed && "a flower bed"].filter(Boolean);
   const inclusionText = selectedInclusions.length ? `Includes ${selectedInclusions.join(" and ")}.` : "No special inclusions selected.";
   const displayMessage = content.message.trim() || initialContent.message;
+  const messageIsAutofilled = !content.message.trim() || content.message === initialContent.message;
 
   async function renderPage(index: number) {
     const canvas = canvasRefs.current[index];
@@ -98,7 +104,7 @@ export default function Home() {
       image.addEventListener("load", () => resolve(), { once: true });
       image.addEventListener("error", () => resolve(), { once: true });
     })));
-    return toPng(canvas, { canvasWidth: 2100, canvasHeight: 990, pixelRatio: 1, cacheBust: true, style: { borderRadius: "0px" } });
+    return toPng(canvas, { canvasWidth: 2100, canvasHeight: 990, pixelRatio: 1, cacheBust: true, style: { border: "none", borderRadius: "0px" } });
   }
 
   async function preparePreview(indices: number[]) {
@@ -120,13 +126,14 @@ export default function Home() {
       if (imageIndex > 0) pdf.addPage([2100, 990], "landscape");
       pdf.addImage(image, "PNG", 0, 0, 2100, 990, undefined, "FAST");
     });
-    const suffix = preview.indices.length === 2 ? "front-and-back" : preview.indices[0] === 0 ? "front" : "back";
-    pdf.save(`gift-voucher-${suffix}.pdf`);
+    const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
+    const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
+    pdf.save(`${guestFileName}${pageSuffix}.pdf`);
     setPreview(null);
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1800px] px-[clamp(20px,4vw,64px)] pt-8 pb-24 max-[720px]:px-4 max-[720px]:pb-14 max-[560px]:pt-5">
+    <main className="mx-auto w-full max-w-[1800px] overflow-x-hidden px-[clamp(20px,4vw,64px)] pt-8 pb-24 max-[720px]:px-4 max-[720px]:pb-14 max-[560px]:pt-5">
       <header className="flex items-end justify-between gap-7 border-b border-zinc-200 pb-6 max-[720px]:gap-[18px] max-[720px]:pb-5 max-[560px]:flex-col max-[560px]:items-start">
         <div>
           <p className="mb-2 font-secondary text-[11px] font-bold tracking-[.18em] text-zinc-500 uppercase">Voucher canvas</p>
@@ -145,7 +152,7 @@ export default function Home() {
         </DropdownMenu>
       </header>
 
-      <div className="mt-8 grid items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="mt-6 grid items-start gap-6 sm:mt-8 xl:grid-cols-[360px_minmax(0,1fr)]">
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white font-secondary shadow-sm" aria-labelledby="editor-title">
         <div className="border-b border-zinc-100 px-4 py-5 sm:px-5">
           <p className="font-secondary text-[11px] font-semibold tracking-[.18em] text-zinc-500 uppercase">Live editor</p>
@@ -161,13 +168,16 @@ export default function Home() {
               <div className="px-1 pt-3">
               <FieldSet>
                 <FieldLegend>Voucher copy</FieldLegend>
-                <EditorField id="front-title" label="Title" value={content.frontTitle} multiline onChange={update("frontTitle")} />
+                <EditorField id="front-title" label="Title" value={content.frontTitle} multiline disabled onChange={update("frontTitle")} />
                 <Field>
                   <div className="flex items-center justify-between gap-3">
                     <FieldLabel htmlFor="message">Message</FieldLabel>
-                    <Button type="button" variant="outline" size="sm" onClick={() => update("message")(initialContent.message)}>Autofill</Button>
+                    <div className="flex items-center gap-2">
+                      {messageIsAutofilled && <Badge variant="secondary">Autofilled</Badge>}
+                      <Button type="button" variant="outline" size="sm" onClick={() => update("message")(initialContent.message)}>Autofill</Button>
+                    </div>
                   </div>
-                  <Textarea id="message" value={content.message} onChange={(event) => update("message")(event.target.value)} />
+                  <Textarea id="message" rows={6} value={content.message} onChange={(event) => update("message")(event.target.value)} />
                   <FieldDescription>The default message is used when this field is empty.</FieldDescription>
                 </Field>
                 <EditorField id="sender" label="Sender" value={content.sender} onChange={update("sender")} />
@@ -184,7 +194,7 @@ export default function Home() {
             <div className="grid gap-7 px-1 pt-3">
               <FieldSet>
               <FieldLegend>Voucher &amp; inclusions</FieldLegend>
-              <EditorField id="back-title" label="Voucher title" value={content.backTitle} onChange={update("backTitle")} />
+              <EditorField id="back-title" label="Voucher title" value={content.backTitle} disabled onChange={update("backTitle")} />
               <Field>
                 <FieldLabel htmlFor="villa-type">Villa type</FieldLabel>
                 <Select value={content.villaType} onValueChange={(value) => value && update("villaType")(value)}>
@@ -201,11 +211,11 @@ export default function Home() {
                 <FieldLabel>Inclusions</FieldLabel>
                 <div className="grid gap-3">
                   <Field orientation="horizontal">
-                    <Checkbox id="candlelight-dinner" checked={content.candlelightDinner} onCheckedChange={update("candlelightDinner")} />
+                    <Switch id="candlelight-dinner" checked={content.candlelightDinner} onCheckedChange={update("candlelightDinner")} />
                     <FieldLabel htmlFor="candlelight-dinner">Candlelight dinner</FieldLabel>
                   </Field>
                   <Field orientation="horizontal">
-                    <Checkbox id="flower-bed" checked={content.flowerBed} onCheckedChange={update("flowerBed")} />
+                    <Switch id="flower-bed" checked={content.flowerBed} onCheckedChange={update("flowerBed")} />
                     <FieldLabel htmlFor="flower-bed">Flower bed</FieldLabel>
                   </Field>
                 </div>
@@ -214,19 +224,19 @@ export default function Home() {
 
               <FieldSet>
               <FieldLegend>Guest &amp; stay</FieldLegend>
-              <EditorField id="guest-name" label="Guest name" value={content.guestName} onChange={update("guestName")} />
+              <EditorField id="guest-name" label="Guest name" value={content.guestName} onChange={(value) => update("guestName")(toTitleCase(value))} />
               <DateEditorField id="check-in-date" label="Check-in date" value={content.checkInDate} onChange={update("checkInDate")} />
-              <EditorField id="check-in-time" label="Check-in time" value={content.checkInTime} onChange={update("checkInTime")} />
+              <EditorField id="check-in-time" label="Check-in time" value={content.checkInTime} disabled onChange={update("checkInTime")} />
               <DateEditorField id="check-out-date" label="Check-out date" value={content.checkOutDate} onChange={update("checkOutDate")} />
-              <EditorField id="check-out-time" label="Check-out time" value={content.checkOutTime} onChange={update("checkOutTime")} />
+              <EditorField id="check-out-time" label="Check-out time" value={content.checkOutTime} disabled onChange={update("checkOutTime")} />
               <DateEditorField id="redeem-date" label="Redeem before" value={content.redeemDate} onChange={update("redeemDate")} />
               </FieldSet>
 
               <FieldSet>
               <FieldLegend>Resort contact</FieldLegend>
-              <EditorField id="address" label="Address" value={content.address} multiline onChange={update("address")} />
-              <EditorField id="phone" label="Phone" value={content.phone} onChange={update("phone")} />
-              <EditorField id="email" label="Email" value={content.email} onChange={update("email")} />
+              <EditorField id="address" label="Address" value={content.address} multiline disabled onChange={update("address")} />
+              <EditorField id="phone" label="Phone" value={content.phone} disabled onChange={update("phone")} />
+              <EditorField id="email" label="Email" value={content.email} disabled onChange={update("email")} />
               </FieldSet>
             </div>
             </AccordionContent>
@@ -236,10 +246,11 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="grid min-w-0 gap-[clamp(50px,8vw,86px)] max-[720px]:gap-[42px] min-[1600px]:gap-24" aria-label="Voucher pages">
+      <section className="grid min-w-0 gap-[clamp(32px,6vw,72px)] min-[1600px]:gap-24" aria-label="Voucher pages">
+        <p className="mb-[-20px] font-secondary text-xs text-zinc-500 xl:hidden">Swipe horizontally to inspect the full voucher.</p>
         {pages.map((page, index) => (
-          <article key={page}>
-            <div ref={(node) => { canvasRefs.current[index] = node; }} className="group relative aspect-[2100/990] w-full overflow-hidden rounded-[clamp(10px,1.5vw,20px)] border border-white/8 bg-[linear-gradient(115deg,#141d1c_0%,#141f1e_50%,#121c1a_75%,#142421_100%)] shadow-[0_2px_4px_rgba(16,28,25,.12),0_24px_60px_rgba(16,28,25,.16)] [container-type:inline-size] after:pointer-events-none after:absolute after:inset-0 after:bg-[radial-gradient(circle_at_50%_40%,transparent_20%,rgba(3,10,8,.18)_100%)] after:content-[''] max-[720px]:rounded-[9px] max-[720px]:shadow-[0_2px_3px_rgba(16,28,25,.1),0_14px_32px_rgba(16,28,25,.14)]">
+          <article key={page} className="-mx-4 overflow-x-auto px-4 pb-5 sm:mx-0 sm:px-0 xl:overflow-visible">
+            <div ref={(node) => { canvasRefs.current[index] = node; }} className="group relative aspect-[2100/990] w-full min-w-[840px] overflow-hidden rounded-[9px] border border-white/8 bg-[linear-gradient(115deg,#141d1c_0%,#141f1e_50%,#121c1a_75%,#142421_100%)] shadow-[0_2px_3px_rgba(16,28,25,.1),0_14px_32px_rgba(16,28,25,.14)] [container-type:inline-size] after:pointer-events-none after:absolute after:inset-0 after:bg-[radial-gradient(circle_at_50%_40%,transparent_20%,rgba(3,10,8,.18)_100%)] after:content-[''] xl:min-w-0 xl:rounded-[clamp(10px,1.5vw,20px)] xl:shadow-[0_2px_4px_rgba(16,28,25,.12),0_24px_60px_rgba(16,28,25,.16)]">
               <Image className="absolute top-[-24.04%] left-[67.667%] z-10 h-[90.202%] w-[48.619%] origin-center rotate-150 object-contain" src="/spiral.svg" alt="" width={1021} height={893} priority={index === 0} />
               <Image className="absolute top-1/2 left-1/2 z-10 h-[90.202%] w-[48.619%] -translate-x-1/2 -translate-y-1/2 object-contain" src="/spiral.svg" alt="" width={1021} height={893} />
               <Image className="absolute top-[10.101%] left-[30.952%] z-20 h-[8.081%] w-[3.81%]" src="/dot.svg" alt="" width={80} height={80} />
