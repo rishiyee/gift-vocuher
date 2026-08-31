@@ -19,10 +19,12 @@ import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const pages = ["Front", "Back"];
 const APP_PIN = "2026";
-const VOUCHER_STORAGE_KEY = "gift-voucher-content";
+const VOUCHER_STORAGE_KEY = "gift-voucher-content-v2";
+const DEFAULT_MESSAGE = "Wishing you both a lifetime of love, laughter, and beautiful moments together.\n\nMay this little getaway be the beginning of countless wonderful journeys and cherished memories.";
 
 function toTitleCase(value: string) {
   return value.toLowerCase().replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
@@ -30,13 +32,13 @@ function toTitleCase(value: string) {
 
 const initialContent = {
   frontTitle: "GIFT\nVOUCHER",
-  message: "Wishing you both a lifetime of love, laughter, and beautiful moments together.\n\nMay this little getaway be the beginning of countless wonderful journeys and cherished memories.",
+  message: "",
   sender: "OG BANGALORE",
   backTitle: "VOUCHER",
   villaType: "PRIVATE POOL VILLA",
   candlelightDinner: true,
   flowerBed: true,
-  guestName: "Vyshanav & Parvathy",
+  guestName: "",
   voucherType: "dated",
   checkInDate: "14 September 2026",
   checkInTime: "AT 2:00 PM",
@@ -116,12 +118,15 @@ export default function Home() {
   const [isDark, setIsDark] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("gift-voucher-theme") === "dark");
   const [exporting, setExporting] = useState<number | "all" | null>(null);
   const [preview, setPreview] = useState<{ indices: number[]; images: string[] } | null>(null);
+  const [pasteStatus, setPasteStatus] = useState("");
+  const [inclusionsVerified, setInclusionsVerified] = useState(false);
+  const [exportError, setExportError] = useState("");
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [content.candlelightDinner && "a candlelight dinner", content.flowerBed && "a flower bed"].filter(Boolean);
   const inclusionText = selectedInclusions.length ? `Includes ${selectedInclusions.join(" and ")}.` : "";
-  const displayMessage = content.message.trim() || initialContent.message;
-  const messageIsAutofilled = !content.message.trim() || content.message === initialContent.message;
+  const displayMessage = content.message.trim();
+  const messageState = !content.message.trim() ? "Empty" : content.message === DEFAULT_MESSAGE ? "Autofilled" : "Custom";
 
   useEffect(() => {
     window.localStorage.setItem(VOUCHER_STORAGE_KEY, JSON.stringify(content));
@@ -143,6 +148,16 @@ export default function Home() {
     if ("vibrate" in navigator) navigator.vibrate([80, 50, 80]);
   }
 
+  async function pasteInto(field: "message" | "guestName") {
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      update(field)(field === "guestName" ? toTitleCase(clipboardText.trim()) : clipboardText);
+      setPasteStatus(`${field === "guestName" ? "Guest name" : "Message"} pasted.`);
+    } catch {
+      setPasteStatus("Clipboard access was not available. Use your browser's paste command instead.");
+    }
+  }
+
   async function renderPage(index: number) {
     const canvas = canvasRefs.current[index];
     if (!canvas) throw new Error("Voucher canvas is not available");
@@ -155,6 +170,23 @@ export default function Home() {
   }
 
   async function preparePreview(indices: number[]) {
+    const requiredFields: Array<[string, string]> = [
+      [content.frontTitle, "front title"], [content.message, "message"], [content.sender, "sender"],
+      [content.backTitle, "voucher title"], [content.villaType, "villa type"], [content.guestName, "guest name"],
+      [content.address, "address"], [content.phone, "phone"], [content.email, "email"],
+      ...(content.voucherType === "dated"
+        ? [[content.checkInDate, "check-in date"], [content.checkInTime, "check-in time"], [content.checkOutDate, "check-out date"], [content.checkOutTime, "check-out time"]] as Array<[string, string]>
+        : [[content.redeemDate, "redemption date"]] as Array<[string, string]>),
+    ];
+    const missingFields = requiredFields.filter(([value]) => !value.trim()).map(([, label]) => label);
+    if (missingFields.length || !inclusionsVerified) {
+      const fieldMessage = missingFields.length ? `Complete: ${missingFields.join(", ")}.` : "";
+      const inclusionMessage = !inclusionsVerified ? " Verify the inclusion selection." : "";
+      setExportError(`${fieldMessage}${inclusionMessage}`.trim());
+      if ("vibrate" in navigator) navigator.vibrate(80);
+      return;
+    }
+    setExportError("");
     const exportTarget = indices.length === 2 ? "all" : indices[0];
     setExporting(exportTarget);
     try {
@@ -219,8 +251,8 @@ export default function Home() {
   }
 
   return (
-    <main className="w-full px-[clamp(16px,3vw,48px)] pb-20">
-      <header className="sticky top-0 z-40 -mx-[clamp(16px,3vw,48px)] flex items-center justify-between gap-4 border-b border-zinc-200/80 bg-white/90 px-[clamp(16px,3vw,48px)] py-4 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/90">
+    <main className="w-full px-0 pb-20 sm:px-[clamp(16px,3vw,48px)]">
+      <header className="sticky top-0 z-40 mx-0 flex items-center justify-between gap-4 border-b border-zinc-200/80 bg-white/90 px-4 py-4 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/90 sm:-mx-[clamp(16px,3vw,48px)] sm:px-[clamp(16px,3vw,48px)]">
         <div>
           <p className="font-secondary text-[10px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Voucher studio</p>
           <h1 className="font-secondary text-lg font-semibold tracking-[-.02em] sm:text-xl">Gift voucher</h1>
@@ -242,9 +274,10 @@ export default function Home() {
         </DropdownMenu>
         </div>
       </header>
+      {exportError && <div role="alert" className="mx-4 mt-4 bg-destructive/10 px-4 py-3 font-secondary text-sm text-destructive sm:mx-0">{exportError}</div>}
 
-      <div className="mt-5 grid items-start gap-5 lg:mt-8 xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-8">
-      <section className="self-start overflow-hidden rounded-2xl bg-white font-secondary shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] dark:bg-zinc-900 xl:sticky xl:top-24" aria-labelledby="editor-title">
+      <div className="mt-0 grid items-start gap-5 sm:mt-5 lg:mt-8 xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-8">
+      <section className="self-start overflow-hidden bg-white font-secondary dark:bg-zinc-900 sm:rounded-2xl sm:shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] xl:sticky xl:top-24" aria-labelledby="editor-title">
         <div className="px-5 py-5 sm:px-6 sm:py-6">
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="font-secondary text-[11px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Live editor</p>
@@ -255,7 +288,7 @@ export default function Home() {
         </div>
         <div className="bg-zinc-50/70 px-4 pb-4 dark:bg-zinc-950/60 sm:px-5 sm:pb-5">
         <Accordion defaultValue={["front"]}>
-          <div className="mt-4 rounded-xl bg-white px-3 shadow-xs transition-shadow hover:shadow-sm dark:bg-zinc-900">
+          <div className="mt-4 bg-white px-3 dark:bg-zinc-900 sm:rounded-xl sm:shadow-xs sm:transition-shadow sm:hover:shadow-sm">
           <AccordionItem value="front">
             <AccordionTrigger className="hover:no-underline">Front page</AccordionTrigger>
             <AccordionContent>
@@ -266,13 +299,14 @@ export default function Home() {
                 <Field>
                   <div className="flex items-center justify-between gap-3">
                     <FieldLabel htmlFor="message">Message</FieldLabel>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={messageIsAutofilled ? "secondary" : "outline"}>{messageIsAutofilled ? "Autofilled" : "Custom"}</Badge>
-                      <Button type="button" variant="outline" size="sm" onClick={() => update("message")(initialContent.message)}>Autofill</Button>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <Badge variant={messageState === "Autofilled" ? "secondary" : "outline"}>{messageState}</Badge>
+                      <Button type="button" variant="outline" size="sm" onClick={() => update("message")(DEFAULT_MESSAGE)}>Autofill</Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => pasteInto("message")}>Paste</Button>
                     </div>
                   </div>
-                  <Textarea id="message" rows={6} value={content.message} onFocus={() => content.message === initialContent.message && update("message")('')} onChange={(event) => update("message")(event.target.value)} />
-                  <FieldDescription>The default message is used when this field is empty.</FieldDescription>
+                  <Textarea id="message" rows={6} value={content.message} placeholder="Write a personal message" onChange={(event) => update("message")(event.target.value)} />
+                  <FieldDescription>Write, paste, or autofill a message.</FieldDescription>
                 </Field>
                 <EditorField id="sender" label="Sender" value={content.sender} onChange={update("sender")} />
               </FieldSet>
@@ -281,7 +315,7 @@ export default function Home() {
           </AccordionItem>
           </div>
 
-          <div className="mt-3 rounded-xl bg-white px-3 shadow-xs transition-shadow hover:shadow-sm dark:bg-zinc-900">
+          <div className="mt-3 bg-white px-3 dark:bg-zinc-900 sm:rounded-xl sm:shadow-xs sm:transition-shadow sm:hover:shadow-sm">
           <AccordionItem value="back">
             <AccordionTrigger className="hover:no-underline">Back page</AccordionTrigger>
             <AccordionContent>
@@ -307,21 +341,31 @@ export default function Home() {
                 <FieldLabel>Inclusions</FieldLabel>
                 <div className="grid gap-3">
                   <Field orientation="horizontal">
-                    <Switch id="candlelight-dinner" checked={content.candlelightDinner} onCheckedChange={update("candlelightDinner")} />
+                    <Switch id="candlelight-dinner" checked={content.candlelightDinner} onCheckedChange={(value) => { update("candlelightDinner")(value); setInclusionsVerified(false); }} />
                     <FieldLabel htmlFor="candlelight-dinner">Candlelight dinner</FieldLabel>
                   </Field>
                   <Field orientation="horizontal">
-                    <Switch id="flower-bed" checked={content.flowerBed} onCheckedChange={update("flowerBed")} />
+                    <Switch id="flower-bed" checked={content.flowerBed} onCheckedChange={(value) => { update("flowerBed")(value); setInclusionsVerified(false); }} />
                     <FieldLabel htmlFor="flower-bed">Flower bed</FieldLabel>
                   </Field>
                 </div>
                 {selectedInclusions.length === 0 && <FieldDescription>No inclusions will be shown on the voucher.</FieldDescription>}
+                <Field orientation="horizontal">
+                  <Checkbox id="verify-inclusions" checked={inclusionsVerified} onCheckedChange={setInclusionsVerified} />
+                  <FieldLabel htmlFor="verify-inclusions">I verified the inclusion selection</FieldLabel>
+                </Field>
               </Field>
               </FieldSet>
 
               <FieldSet>
               <FieldLegend>Guest &amp; stay</FieldLegend>
-              <EditorField id="guest-name" label="Guest name" value={content.guestName} onChange={(value) => update("guestName")(toTitleCase(value))} />
+              <Field>
+                <div className="flex items-center justify-between gap-3">
+                  <FieldLabel htmlFor="guest-name">Guest name</FieldLabel>
+                  <Button type="button" variant="outline" size="sm" onClick={() => pasteInto("guestName")}>Paste</Button>
+                </div>
+                <Input id="guest-name" value={content.guestName} placeholder="Enter guest name" onChange={(event) => update("guestName")(toTitleCase(event.target.value))} />
+              </Field>
               <Field>
                 <FieldLabel>Voucher schedule</FieldLabel>
                 <RadioGroup defaultValue={initialContent.voucherType} onValueChange={(value) => update("voucherType")(value)}>
@@ -361,7 +405,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="grid min-w-0 gap-4 rounded-2xl bg-zinc-100/70 p-3 dark:bg-zinc-900/70 sm:gap-5 sm:p-5 lg:p-6" aria-label="Voucher pages">
+      <section className="grid min-w-0 gap-4 bg-transparent p-0 sm:rounded-2xl sm:bg-zinc-100/70 sm:p-5 sm:dark:bg-zinc-900/70 lg:p-6" aria-label="Voucher pages">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="font-secondary text-sm font-semibold text-zinc-900 dark:text-zinc-100">Canvas preview</h2>
@@ -371,7 +415,7 @@ export default function Home() {
         </div>
         <div className="grid gap-6 sm:gap-8 lg:gap-10">
         {pages.map((page, index) => (
-          <article key={page} tabIndex={0} aria-label={`${page} voucher preview. Scroll horizontally on smaller screens.`} className="-mx-3 overflow-x-auto px-3 pb-3 outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6 xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0">
+          <article key={page} tabIndex={0} aria-label={`${page} voucher preview. Scroll horizontally on smaller screens.`} className="mx-0 overflow-x-auto px-0 pb-3 outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6 xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0">
             <div ref={(node) => { canvasRefs.current[index] = node; }} className="group relative aspect-[2100/990] w-full min-w-[840px] overflow-hidden rounded-[9px] bg-[linear-gradient(115deg,#141d1c_0%,#141f1e_50%,#121c1a_75%,#142421_100%)] shadow-[0_2px_3px_rgba(16,28,25,.1),0_14px_32px_rgba(16,28,25,.14)] [container-type:inline-size] after:pointer-events-none after:absolute after:inset-0 after:bg-[radial-gradient(circle_at_50%_40%,transparent_20%,rgba(3,10,8,.18)_100%)] after:content-[''] xl:min-w-0 xl:rounded-[clamp(10px,1.5vw,20px)] xl:shadow-[0_2px_4px_rgba(16,28,25,.12),0_24px_60px_rgba(16,28,25,.16)]">
               <Image className="absolute top-[-24.04%] left-[67.667%] z-10 h-[90.202%] w-[48.619%] origin-center rotate-150 object-contain" src="/spiral.svg" alt="" width={1021} height={893} priority={index === 0} />
               <Image className="absolute top-1/2 left-1/2 z-10 h-[90.202%] w-[48.619%] -translate-x-1/2 -translate-y-1/2 object-contain" src="/spiral.svg" alt="" width={1021} height={893} />
@@ -478,6 +522,7 @@ export default function Home() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <p className="sr-only" aria-live="polite">{pasteStatus}</p>
     </main>
   );
 }
