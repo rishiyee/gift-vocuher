@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Field, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,11 +15,14 @@ import { format, isValid, parse } from "date-fns";
 import { toPng } from "html-to-image";
 import { jsPDF } from "jspdf";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Calendar as CalendarIcon } from "lucide-react";
+import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 const pages = ["Front", "Back"];
+const APP_PIN = "2026";
+const VOUCHER_STORAGE_KEY = "gift-voucher-content";
 
 function toTitleCase(value: string) {
   return value.toLowerCase().replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
@@ -34,6 +37,7 @@ const initialContent = {
   candlelightDinner: true,
   flowerBed: true,
   guestName: "Vyshanav & Parvathy",
+  voucherType: "dated",
   checkInDate: "14 September 2026",
   checkInTime: "AT 2:00 PM",
   checkOutDate: "15 September 2026",
@@ -43,6 +47,25 @@ const initialContent = {
   phone: "+91 88 91 8888 18",
   email: "hello@chembarathi.com",
 };
+
+type VoucherContent = typeof initialContent;
+
+function readSavedContent(): VoucherContent {
+  if (typeof window === "undefined") return initialContent;
+  try {
+    const storedValue = window.localStorage.getItem(VOUCHER_STORAGE_KEY);
+    if (!storedValue) return initialContent;
+    const parsed: unknown = JSON.parse(storedValue);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return initialContent;
+    const saved = parsed as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(initialContent).map(([key, fallback]) => [key, typeof saved[key] === typeof fallback ? saved[key] : fallback]),
+    ) as VoucherContent;
+  } catch {
+    window.localStorage.removeItem(VOUCHER_STORAGE_KEY);
+    return initialContent;
+  }
+}
 
 function EditorField({ id, label, value, multiline = false, disabled = false, onChange }: { id: string; label: string; value: string; multiline?: boolean; disabled?: boolean; onChange: (value: string) => void }) {
   return (
@@ -86,15 +109,39 @@ function DateEditorField({ id, label, value, onChange }: { id: string; label: st
 }
 
 export default function Home() {
-  const [content, setContent] = useState(initialContent);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [content, setContent] = useState<VoucherContent>(readSavedContent);
+  const [isDark, setIsDark] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("gift-voucher-theme") === "dark");
   const [exporting, setExporting] = useState<number | "all" | null>(null);
   const [preview, setPreview] = useState<{ indices: number[]; images: string[] } | null>(null);
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [content.candlelightDinner && "a candlelight dinner", content.flowerBed && "a flower bed"].filter(Boolean);
-  const inclusionText = selectedInclusions.length ? `Includes ${selectedInclusions.join(" and ")}.` : "No special inclusions selected.";
+  const inclusionText = selectedInclusions.length ? `Includes ${selectedInclusions.join(" and ")}.` : "";
   const displayMessage = content.message.trim() || initialContent.message;
   const messageIsAutofilled = !content.message.trim() || content.message === initialContent.message;
+
+  useEffect(() => {
+    window.localStorage.setItem(VOUCHER_STORAGE_KEY, JSON.stringify(content));
+  }, [content]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", isDark);
+    window.localStorage.setItem("gift-voucher-theme", isDark ? "dark" : "light");
+  }, [isDark]);
+
+  function unlockApp(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pin === APP_PIN) {
+      setIsUnlocked(true);
+      setPinError("");
+      return;
+    }
+    setPinError("Incorrect PIN. Please try again.");
+    if ("vibrate" in navigator) navigator.vibrate([80, 50, 80]);
+  }
 
   async function renderPage(index: number) {
     const canvas = canvasRefs.current[index];
@@ -128,17 +175,60 @@ export default function Home() {
     });
     const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
     const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
-    pdf.save(`${guestFileName}${pageSuffix}.pdf`);
+    const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
+    pdf.save(`${guestFileName}${pageSuffix} - ${generatedAt}.pdf`);
     setPreview(null);
   }
 
+  if (!isUnlocked) {
+    return (
+      <main className="grid min-h-dvh place-items-center bg-zinc-50 px-4 py-10 font-secondary dark:bg-zinc-950">
+        <Button variant="outline" size="icon" className="fixed top-4 right-4" onClick={() => setIsDark((current) => !current)} aria-label={isDark ? "Use light mode" : "Use dark mode"}>
+          {isDark ? <Sun /> : <Moon />}
+        </Button>
+        <section className="w-[min(100%,24rem)] bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,.04),0_16px_48px_rgba(0,0,0,.08)] dark:bg-zinc-900 sm:p-8" aria-labelledby="lock-title">
+          <p className="text-[10px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Voucher studio</p>
+          <h1 id="lock-title" className="mt-2 text-2xl font-semibold tracking-[-.03em] text-zinc-950 dark:text-zinc-50">Enter access PIN</h1>
+          <p className="mt-2 text-sm leading-5 text-zinc-500 dark:text-zinc-400">Enter the four-digit PIN to open the gift voucher editor.</p>
+          <form className="mt-6 grid gap-4" onSubmit={unlockApp}>
+            <Field>
+              <FieldLabel htmlFor="app-pin">Four-digit PIN</FieldLabel>
+              <Input
+                id="app-pin"
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]{4}"
+                autoComplete="current-password"
+                maxLength={4}
+                value={pin}
+                aria-invalid={Boolean(pinError)}
+                aria-describedby={pinError ? "pin-error" : undefined}
+                autoFocus
+                onChange={(event) => {
+                  setPin(event.target.value.replace(/\D/g, "").slice(0, 4));
+                  if (pinError) setPinError("");
+                }}
+              />
+              {pinError && <FieldDescription id="pin-error" className="text-destructive" aria-live="polite">{pinError}</FieldDescription>}
+            </Field>
+            <Button type="submit" disabled={pin.length !== 4} className="w-full">Unlock editor</Button>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
   return (
-    <main className="mx-auto w-full max-w-[1800px] overflow-x-hidden px-[clamp(20px,4vw,64px)] pt-8 pb-24 max-[720px]:px-4 max-[720px]:pb-14 max-[560px]:pt-5">
-      <header className="flex items-end justify-between gap-7 border-b border-zinc-200 pb-6 max-[720px]:gap-[18px] max-[720px]:pb-5 max-[560px]:flex-col max-[560px]:items-start">
+    <main className="w-full px-[clamp(16px,3vw,48px)] pb-20">
+      <header className="sticky top-0 z-40 -mx-[clamp(16px,3vw,48px)] flex items-center justify-between gap-4 border-b border-zinc-200/80 bg-white/90 px-[clamp(16px,3vw,48px)] py-4 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/90">
         <div>
-          <p className="mb-2 font-secondary text-[11px] font-bold tracking-[.18em] text-zinc-500 uppercase">Voucher canvas</p>
-          <h1 className="font-primary text-[clamp(28px,4vw,46px)] font-medium tracking-[-.045em]">Gift voucher</h1>
+          <p className="font-secondary text-[10px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Voucher studio</p>
+          <h1 className="font-secondary text-lg font-semibold tracking-[-.02em] sm:text-xl">Gift voucher</h1>
         </div>
+        <div className="flex items-center gap-2">
+        <Button variant="outline" size="icon" onClick={() => setIsDark((current) => !current)} aria-label={isDark ? "Use light mode" : "Use dark mode"}>
+          {isDark ? <Sun /> : <Moon />}
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button disabled={exporting !== null} />}>{exporting !== null ? "Preparing PDF..." : "Download PDF"}</DropdownMenuTrigger>
           <DropdownMenuContent>
@@ -150,18 +240,22 @@ export default function Home() {
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </header>
 
-      <div className="mt-6 grid items-start gap-6 sm:mt-8 xl:grid-cols-[360px_minmax(0,1fr)]">
-      <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white font-secondary shadow-sm" aria-labelledby="editor-title">
-        <div className="border-b border-zinc-100 px-4 py-5 sm:px-5">
-          <p className="font-secondary text-[11px] font-semibold tracking-[.18em] text-zinc-500 uppercase">Live editor</p>
-          <h2 id="editor-title" className="mt-1 font-secondary text-2xl font-light text-zinc-950">Edit voucher text</h2>
-          <p className="mt-2 font-secondary text-sm leading-5 text-zinc-500">Choose a page, then update its content. Changes appear instantly.</p>
+      <div className="mt-5 grid items-start gap-5 lg:mt-8 xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-8">
+      <section className="self-start overflow-hidden rounded-2xl bg-white font-secondary shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] dark:bg-zinc-900 xl:sticky xl:top-24" aria-labelledby="editor-title">
+        <div className="px-5 py-5 sm:px-6 sm:py-6">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="font-secondary text-[11px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Live editor</p>
+            <Badge variant="outline"><span className="mr-1.5 size-1.5 rounded-full bg-emerald-500" />Live preview</Badge>
+          </div>
+          <h2 id="editor-title" className="font-secondary text-xl font-semibold tracking-[-.02em] text-zinc-950 dark:text-zinc-50 sm:text-2xl">Customize your voucher</h2>
+          <p className="mt-2 font-secondary text-sm leading-5 text-zinc-500 dark:text-zinc-400">Update the recipient and stay details. Every change appears on the canvas instantly.</p>
         </div>
-        <div className="px-4 pb-3 sm:px-5">
+        <div className="bg-zinc-50/70 px-4 pb-4 dark:bg-zinc-950/60 sm:px-5 sm:pb-5">
         <Accordion defaultValue={["front"]}>
-          <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 shadow-xs">
+          <div className="mt-4 rounded-xl bg-white px-3 shadow-xs transition-shadow hover:shadow-sm dark:bg-zinc-900">
           <AccordionItem value="front">
             <AccordionTrigger className="hover:no-underline">Front page</AccordionTrigger>
             <AccordionContent>
@@ -173,11 +267,11 @@ export default function Home() {
                   <div className="flex items-center justify-between gap-3">
                     <FieldLabel htmlFor="message">Message</FieldLabel>
                     <div className="flex items-center gap-2">
-                      {messageIsAutofilled && <Badge variant="secondary">Autofilled</Badge>}
+                      <Badge variant={messageIsAutofilled ? "secondary" : "outline"}>{messageIsAutofilled ? "Autofilled" : "Custom"}</Badge>
                       <Button type="button" variant="outline" size="sm" onClick={() => update("message")(initialContent.message)}>Autofill</Button>
                     </div>
                   </div>
-                  <Textarea id="message" rows={6} value={content.message} onChange={(event) => update("message")(event.target.value)} />
+                  <Textarea id="message" rows={6} value={content.message} onFocus={() => content.message === initialContent.message && update("message")('')} onChange={(event) => update("message")(event.target.value)} />
                   <FieldDescription>The default message is used when this field is empty.</FieldDescription>
                 </Field>
                 <EditorField id="sender" label="Sender" value={content.sender} onChange={update("sender")} />
@@ -187,7 +281,7 @@ export default function Home() {
           </AccordionItem>
           </div>
 
-          <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 shadow-xs">
+          <div className="mt-3 rounded-xl bg-white px-3 shadow-xs transition-shadow hover:shadow-sm dark:bg-zinc-900">
           <AccordionItem value="back">
             <AccordionTrigger className="hover:no-underline">Back page</AccordionTrigger>
             <AccordionContent>
@@ -198,12 +292,14 @@ export default function Home() {
               <Field>
                 <FieldLabel htmlFor="villa-type">Villa type</FieldLabel>
                 <Select value={content.villaType} onValueChange={(value) => value && update("villaType")(value)}>
-                  <SelectTrigger id="villa-type"><SelectValue placeholder="Select a villa" /></SelectTrigger>
+                  <SelectTrigger id="villa-type" className="w-full"><SelectValue placeholder="Select a villa" /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="DELUXE COTTAGE WITH FOREST VIEW">Deluxe Cottage with Forest View</SelectItem>
+                    <SelectItem value="DELUXE COTTAGE WITH LAWN VIEW">Deluxe Cottage with Lawn View</SelectItem>
+                    <SelectItem value="HONEYMOON SUITE">Honeymoon Suite</SelectItem>
+                    <SelectItem value="PREMIUM COTTAGE WITH MOUNTAIN VIEW">Premium Cottage with Mountain View</SelectItem>
+                    <SelectItem value="PREMIUM COTTAGE WITH POOL VIEW AND MOUNTAIN VIEW">Premium Cottage with Pool View and Mountain View</SelectItem>
                     <SelectItem value="PRIVATE POOL VILLA">Private Pool Villa</SelectItem>
-                    <SelectItem value="POOL VILLA">Pool Villa</SelectItem>
-                    <SelectItem value="DELUXE VILLA">Deluxe Villa</SelectItem>
-                    <SelectItem value="HONEYMOON VILLA">Honeymoon Villa</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
@@ -219,17 +315,36 @@ export default function Home() {
                     <FieldLabel htmlFor="flower-bed">Flower bed</FieldLabel>
                   </Field>
                 </div>
+                {selectedInclusions.length === 0 && <FieldDescription>No inclusions will be shown on the voucher.</FieldDescription>}
               </Field>
               </FieldSet>
 
               <FieldSet>
               <FieldLegend>Guest &amp; stay</FieldLegend>
               <EditorField id="guest-name" label="Guest name" value={content.guestName} onChange={(value) => update("guestName")(toTitleCase(value))} />
-              <DateEditorField id="check-in-date" label="Check-in date" value={content.checkInDate} onChange={update("checkInDate")} />
-              <EditorField id="check-in-time" label="Check-in time" value={content.checkInTime} disabled onChange={update("checkInTime")} />
-              <DateEditorField id="check-out-date" label="Check-out date" value={content.checkOutDate} onChange={update("checkOutDate")} />
-              <EditorField id="check-out-time" label="Check-out time" value={content.checkOutTime} disabled onChange={update("checkOutTime")} />
-              <DateEditorField id="redeem-date" label="Redeem before" value={content.redeemDate} onChange={update("redeemDate")} />
+              <Field>
+                <FieldLabel>Voucher schedule</FieldLabel>
+                <RadioGroup defaultValue={initialContent.voucherType} onValueChange={(value) => update("voucherType")(value)}>
+                  <Field orientation="horizontal">
+                    <RadioGroupItem id="dated-voucher" value="dated" />
+                    <FieldLabel htmlFor="dated-voucher">Specific dates</FieldLabel>
+                  </Field>
+                  <Field orientation="horizontal">
+                    <RadioGroupItem id="open-voucher" value="open" />
+                    <FieldLabel htmlFor="open-voucher">No specific date</FieldLabel>
+                  </Field>
+                </RadioGroup>
+              </Field>
+              {content.voucherType === "dated" ? (
+                <>
+                  <DateEditorField id="check-in-date" label="Check-in date" value={content.checkInDate} onChange={update("checkInDate")} />
+                  <EditorField id="check-in-time" label="Check-in time" value={content.checkInTime} disabled onChange={update("checkInTime")} />
+                  <DateEditorField id="check-out-date" label="Check-out date" value={content.checkOutDate} onChange={update("checkOutDate")} />
+                  <EditorField id="check-out-time" label="Check-out time" value={content.checkOutTime} disabled onChange={update("checkOutTime")} />
+                </>
+              ) : (
+                <DateEditorField id="redeem-date" label="Redeem before" value={content.redeemDate} onChange={update("redeemDate")} />
+              )}
               </FieldSet>
 
               <FieldSet>
@@ -246,11 +361,18 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="grid min-w-0 gap-[clamp(32px,6vw,72px)] min-[1600px]:gap-24" aria-label="Voucher pages">
-        <p className="mb-[-20px] font-secondary text-xs text-zinc-500 xl:hidden">Swipe horizontally to inspect the full voucher.</p>
+      <section className="grid min-w-0 gap-4 rounded-2xl bg-zinc-100/70 p-3 dark:bg-zinc-900/70 sm:gap-5 sm:p-5 lg:p-6" aria-label="Voucher pages">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="font-secondary text-sm font-semibold text-zinc-900 dark:text-zinc-100">Canvas preview</h2>
+            <p className="mt-0.5 font-secondary text-xs text-zinc-500 dark:text-zinc-400 xl:hidden">Swipe horizontally to inspect the full voucher.</p>
+          </div>
+          <Badge variant="secondary">2 pages</Badge>
+        </div>
+        <div className="grid gap-6 sm:gap-8 lg:gap-10">
         {pages.map((page, index) => (
-          <article key={page} className="-mx-4 overflow-x-auto px-4 pb-5 sm:mx-0 sm:px-0 xl:overflow-visible">
-            <div ref={(node) => { canvasRefs.current[index] = node; }} className="group relative aspect-[2100/990] w-full min-w-[840px] overflow-hidden rounded-[9px] border border-white/8 bg-[linear-gradient(115deg,#141d1c_0%,#141f1e_50%,#121c1a_75%,#142421_100%)] shadow-[0_2px_3px_rgba(16,28,25,.1),0_14px_32px_rgba(16,28,25,.14)] [container-type:inline-size] after:pointer-events-none after:absolute after:inset-0 after:bg-[radial-gradient(circle_at_50%_40%,transparent_20%,rgba(3,10,8,.18)_100%)] after:content-[''] xl:min-w-0 xl:rounded-[clamp(10px,1.5vw,20px)] xl:shadow-[0_2px_4px_rgba(16,28,25,.12),0_24px_60px_rgba(16,28,25,.16)]">
+          <article key={page} tabIndex={0} aria-label={`${page} voucher preview. Scroll horizontally on smaller screens.`} className="-mx-3 overflow-x-auto px-3 pb-3 outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6 xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0">
+            <div ref={(node) => { canvasRefs.current[index] = node; }} className="group relative aspect-[2100/990] w-full min-w-[840px] overflow-hidden rounded-[9px] bg-[linear-gradient(115deg,#141d1c_0%,#141f1e_50%,#121c1a_75%,#142421_100%)] shadow-[0_2px_3px_rgba(16,28,25,.1),0_14px_32px_rgba(16,28,25,.14)] [container-type:inline-size] after:pointer-events-none after:absolute after:inset-0 after:bg-[radial-gradient(circle_at_50%_40%,transparent_20%,rgba(3,10,8,.18)_100%)] after:content-[''] xl:min-w-0 xl:rounded-[clamp(10px,1.5vw,20px)] xl:shadow-[0_2px_4px_rgba(16,28,25,.12),0_24px_60px_rgba(16,28,25,.16)]">
               <Image className="absolute top-[-24.04%] left-[67.667%] z-10 h-[90.202%] w-[48.619%] origin-center rotate-150 object-contain" src="/spiral.svg" alt="" width={1021} height={893} priority={index === 0} />
               <Image className="absolute top-1/2 left-1/2 z-10 h-[90.202%] w-[48.619%] -translate-x-1/2 -translate-y-1/2 object-contain" src="/spiral.svg" alt="" width={1021} height={893} />
               <Image className="absolute top-[10.101%] left-[30.952%] z-20 h-[8.081%] w-[3.81%]" src="/dot.svg" alt="" width={80} height={80} />
@@ -280,24 +402,25 @@ export default function Home() {
                       <p className="mb-[.7cqw] font-secondary text-[.62cqw] font-light tracking-[.24em]">CHEMBARATHI · WAYANAD</p>
                       <h3 className="m-0 font-primary text-[5.15cqw] leading-[.82] font-light tracking-[-.035em]">{content.backTitle}</h3>
                     </div>
-                    <p className="pb-[.3cqw] font-secondary text-[1.05cqw] font-medium tracking-[.18em]">{content.villaType}</p>
+                    <p className="ml-auto pb-[.3cqw] text-right font-secondary text-[.84cqw] font-medium tracking-[.1em] whitespace-nowrap">{content.villaType}</p>
                   </div>
 
                   <div className="mt-[2.4cqw] h-px w-full bg-[#beb16b]/40" />
 
-                  <div className="grid flex-1 grid-cols-[1fr_1px_1fr] items-center gap-[4.3cqw]">
-                    <div>
+                  <div className={inclusionText ? "grid flex-1 grid-cols-[1fr_1px_1fr] items-center gap-[4.3cqw]" : "grid flex-1 grid-cols-1 items-center"}>
+                    {inclusionText && <div className="order-3">
                       <p className="font-secondary text-[.65cqw] font-light tracking-[.22em]">DETAILS</p>
-                      <p className="mt-[1cqw] max-w-[31cqw] font-primary text-[1.22cqw] leading-[1.45] font-light">{inclusionText}</p>
-                    </div>
+                      <p className="mt-[1cqw] font-primary text-[1.22cqw] leading-[1.45] font-light">{inclusionText}</p>
+                    </div>}
 
-                    <div className="h-[10.5cqw] w-px bg-[#beb16b]/25" />
+                    {inclusionText && <div className="order-2 h-[10.5cqw] w-px bg-[#beb16b]/25" />}
 
-                    <div>
+                    <div className={inclusionText ? "order-1" : "text-right"}>
                       <p className="font-secondary text-[.65cqw] font-light tracking-[.22em]">NAME</p>
                       <p className="mt-[.8cqw] font-primary text-[1.85cqw] leading-none font-light">{content.guestName}</p>
 
-                      <div className="mt-[2.25cqw] grid grid-cols-2 gap-[2.2cqw]">
+                      {content.voucherType === "dated" ? (
+                      <div className={`mt-[2.25cqw] grid grid-cols-2 gap-[2.2cqw] ${inclusionText ? "" : "ml-auto w-1/2"}`}>
                         <div>
                           <p className="font-secondary text-[.58cqw] font-light tracking-[.2em]">CHECK-IN</p>
                           <p className="mt-[.55cqw] font-primary text-[1.02cqw] leading-none font-light whitespace-nowrap">{content.checkInDate}</p>
@@ -309,8 +432,12 @@ export default function Home() {
                           <p className="mt-[.55cqw] font-secondary text-[.58cqw] font-medium tracking-[.13em]">{content.checkOutTime}</p>
                         </div>
                       </div>
-
-                      <p className="mt-[1.4cqw] font-primary text-[.7cqw] font-light">Redeemable for stays before <span className="ml-[.35cqw] text-[.82cqw]">{content.redeemDate}</span></p>
+                      ) : (
+                        <div className="mt-[3cqw]">
+                          <p className="font-secondary text-[.58cqw] font-light tracking-[.2em]">REDEEM BEFORE</p>
+                          <p className="mt-[.7cqw] font-primary text-[1.65cqw] leading-none font-light">{content.redeemDate}</p>
+                        </div>
+                      )}
 
                     </div>
                   </div>
@@ -318,8 +445,8 @@ export default function Home() {
                   <div className="border-t border-[#beb16b]/40 pt-[1.25cqw]">
                     <div className="grid grid-cols-[4.2cqw_1fr_auto] items-center gap-[1.6cqw]">
                       <Image className="h-auto w-[4.2cqw] object-contain" src="/logo.svg" alt="" width={340} height={296} />
-                      <p className="max-w-[42cqw] font-primary text-[.9cqw] leading-[1.55] font-light">{content.address}</p>
-                      <p className="font-secondary text-right text-[.8cqw] leading-[1.65] tracking-[.02em] whitespace-nowrap">{content.phone}<br />{content.email}</p>
+                      <p className="font-primary text-[.9cqw] leading-[1.55] font-light">{content.address}</p>
+                      <p className="font-primary text-right text-[.8cqw] leading-[1.65] tracking-[.02em] whitespace-nowrap">{content.phone}<br />{content.email}</p>
                     </div>
                   </div>
                 </div>
@@ -327,22 +454,22 @@ export default function Home() {
 
               {index === 0 && <Image className="absolute top-1/2 left-[79.048%] z-20 h-[29.899%] w-[16.19%] -translate-y-1/2 object-contain" src="/logo.svg" alt="" width={340} height={296} />}
 
-              <div className="absolute inset-[4.8%] z-30 rounded-lg border border-dashed border-[rgba(211,234,225,.12)] opacity-0 transition-opacity duration-200 group-hover:opacity-100 motion-reduce:transition-none" aria-hidden="true" />
             </div>
           </article>
         ))}
+        </div>
       </section>
       </div>
 
       <Dialog open={preview !== null} onOpenChange={(open) => !open && setPreview(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+        <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] max-w-none overflow-y-auto p-3 sm:w-[calc(100%-2rem)] sm:max-w-none sm:p-5 lg:w-[min(1200px,calc(100%-3rem))]">
           <DialogHeader>
             <DialogTitle>PDF preview</DialogTitle>
             <DialogDescription>Review the selected voucher pages before downloading.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4">
+          <div className="grid gap-4" aria-label="Selected PDF pages">
             {preview?.images.map((image, index) => (
-              <Image key={`${preview.indices[index]}-${image.length}`} src={image} alt={`${preview.indices[index] === 0 ? "Front" : "Back"} voucher preview`} width={1050} height={495} unoptimized className="h-auto w-full border border-zinc-200" />
+              <Image key={`${preview.indices[index]}-${image.length}`} src={image} alt={`${preview.indices[index] === 0 ? "Front" : "Back"} voucher preview`} width={1050} height={495} unoptimized className="h-auto w-full" />
             ))}
           </div>
           <DialogFooter>
