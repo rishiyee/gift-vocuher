@@ -415,12 +415,12 @@ export default function Home() {
 
                     {inclusionText && <div className="order-2 h-[10.5cqw] w-px bg-[#beb16b]/25" />}
 
-                    <div className={inclusionText ? "order-1" : "text-right"}>
+                    <div className={inclusionText ? "order-1" : "justify-self-start text-left"}>
                       <p className="font-secondary text-[.65cqw] font-light tracking-[.22em]">NAME</p>
                       <p className="mt-[.8cqw] font-primary text-[1.85cqw] leading-none font-light">{content.guestName}</p>
 
                       {content.voucherType === "dated" ? (
-                      <div className={`mt-[2.25cqw] grid grid-cols-2 gap-[2.2cqw] ${inclusionText ? "" : "ml-auto w-1/2"}`}>
+                      <div className="mt-[2.25cqw] grid grid-cols-2 gap-[2.2cqw]">
                         <div>
                           <p className="font-secondary text-[.58cqw] font-light tracking-[.2em]">CHECK-IN</p>
                           <p className="mt-[.55cqw] font-primary text-[1.02cqw] leading-none font-light whitespace-nowrap">{content.checkInDate}</p>
