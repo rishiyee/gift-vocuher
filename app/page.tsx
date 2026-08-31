@@ -121,6 +121,8 @@ export default function Home() {
   const [pasteStatus, setPasteStatus] = useState("");
   const [inclusionsVerified, setInclusionsVerified] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareError, setShareError] = useState("");
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [content.candlelightDinner && "a candlelight dinner", content.flowerBed && "a flower bed"].filter(Boolean);
@@ -198,8 +200,8 @@ export default function Home() {
     }
   }
 
-  function savePreviewAsPdf() {
-    if (!preview) return;
+  function createPreviewPdf() {
+    if (!preview) return null;
     const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [2100, 990], hotfixes: ["px_scaling"] });
     preview.images.forEach((image, imageIndex) => {
       if (imageIndex > 0) pdf.addPage([2100, 990], "landscape");
@@ -208,8 +210,32 @@ export default function Home() {
     const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
     const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
     const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
-    pdf.save(`${guestFileName}${pageSuffix} - ${generatedAt}.pdf`);
-    setPreview(null);
+    return { pdf, fileName: `${guestFileName}${pageSuffix} - ${generatedAt}.pdf` };
+  }
+
+  async function sharePreviewPdf() {
+    const generatedPdf = createPreviewPdf();
+    if (!generatedPdf) return;
+    setIsSharing(true);
+    setShareError("");
+    const shareText = `Gift voucher for ${content.guestName.trim() || "the guest"}`;
+    try {
+      const file = new File([generatedPdf.pdf.output("blob")], generatedPdf.fileName, { type: "application/pdf" });
+      const shareData = { title: "Gift voucher", text: shareText, files: [file] };
+      if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+        await navigator.share(shareData);
+        setPreview(null);
+        return;
+      }
+      generatedPdf.pdf.save(generatedPdf.fileName);
+      window.open(`https://wa.me/?text=${encodeURIComponent(`${shareText}. The PDF has been downloaded—please attach it to this chat.`)}`, "_blank", "noopener,noreferrer");
+      setPreview(null);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setShareError("The PDF could not be shared. Please try again.");
+    } finally {
+      setIsSharing(false);
+    }
   }
 
   if (!isUnlocked) {
@@ -262,7 +288,7 @@ export default function Home() {
           {isDark ? <Sun /> : <Moon />}
         </Button>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button disabled={exporting !== null} />}>{exporting !== null ? "Preparing PDF..." : "Download PDF"}</DropdownMenuTrigger>
+          <DropdownMenuTrigger render={<Button disabled={exporting !== null} />}>{exporting !== null ? "Preparing PDF..." : "Share PDF"}</DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuGroup>
               <DropdownMenuLabel>Choose pages</DropdownMenuLabel>
@@ -509,16 +535,17 @@ export default function Home() {
         <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] max-w-none overflow-y-auto p-3 sm:w-[calc(100%-2rem)] sm:max-w-none sm:p-5 lg:w-[min(1200px,calc(100%-3rem))]">
           <DialogHeader>
             <DialogTitle>PDF preview</DialogTitle>
-            <DialogDescription>Review the selected voucher pages before downloading.</DialogDescription>
+            <DialogDescription>Review the selected voucher pages before sharing them to WhatsApp.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4" aria-label="Selected PDF pages">
             {preview?.images.map((image, index) => (
               <Image key={`${preview.indices[index]}-${image.length}`} src={image} alt={`${preview.indices[index] === 0 ? "Front" : "Back"} voucher preview`} width={1050} height={495} unoptimized className="h-auto w-full" />
             ))}
           </div>
+          {shareError && <p role="alert" className="text-sm text-destructive">{shareError}</p>}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPreview(null)}>Cancel</Button>
-            <Button onClick={savePreviewAsPdf}>Download PDF</Button>
+            <Button variant="outline" onClick={() => setPreview(null)} disabled={isSharing}>Cancel</Button>
+            <Button onClick={sharePreviewPdf} disabled={isSharing}>{isSharing ? "Opening share..." : "Share PDF"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
