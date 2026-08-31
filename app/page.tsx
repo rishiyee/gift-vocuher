@@ -26,6 +26,13 @@ const APP_PIN = "2026";
 const VOUCHER_STORAGE_KEY = "gift-voucher-content-v2";
 const DEFAULT_MESSAGE = "Wishing you both a lifetime of love, laughter, and beautiful moments together.\n\nMay this little getaway be the beginning of countless wonderful journeys and cherished memories.";
 
+function withTimeout<Value>(promise: Promise<Value>, timeoutMs: number, message: string) {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error(message)), timeoutMs)),
+  ]);
+}
+
 function toTitleCase(value: string) {
   return value.toLowerCase().replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
 }
@@ -163,12 +170,20 @@ export default function Home() {
   async function renderPage(index: number) {
     const canvas = canvasRefs.current[index];
     if (!canvas) throw new Error("Voucher canvas is not available");
-    await document.fonts.ready;
-    await Promise.all(Array.from(canvas.querySelectorAll("img")).map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => {
-      image.addEventListener("load", () => resolve(), { once: true });
-      image.addEventListener("error", () => resolve(), { once: true });
-    })));
-    return toPng(canvas, { canvasWidth: 2100, canvasHeight: 990, pixelRatio: 1, cacheBust: true, style: { border: "none", borderRadius: "0px" } });
+    await withTimeout(document.fonts.ready, 8000, "Fonts took too long to load");
+    await withTimeout(
+      Promise.all(Array.from(canvas.querySelectorAll("img")).map(async (image) => {
+        if (image.complete) return;
+        try { await image.decode(); } catch { /* Decorative assets may already be available to the renderer. */ }
+      })),
+      8000,
+      "Voucher assets took too long to load",
+    );
+    return withTimeout(
+      toPng(canvas, { canvasWidth: 2100, canvasHeight: 990, pixelRatio: 1, cacheBust: false, skipAutoScale: true, style: { border: "none", borderRadius: "0px" } }),
+      20000,
+      "PDF preview rendering timed out",
+    );
   }
 
   async function preparePreview(indices: number[]) {
@@ -192,9 +207,10 @@ export default function Home() {
     const exportTarget = indices.length === 2 ? "all" : indices[0];
     setExporting(exportTarget);
     try {
-      const images = [];
-      for (const index of indices) images.push(await renderPage(index));
+      const images = await Promise.all(indices.map(renderPage));
       setPreview({ indices, images });
+    } catch {
+      setExportError("The PDF preview could not be prepared. Please wait for the voucher images to appear, then try again.");
     } finally {
       setExporting(null);
     }
