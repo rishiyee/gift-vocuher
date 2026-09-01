@@ -128,6 +128,9 @@ export default function Home() {
   const [pasteStatus, setPasteStatus] = useState("");
   const [inclusionsVerified, setInclusionsVerified] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const [downloadNotice, setDownloadNotice] = useState("");
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [content.candlelightDinner && "a candlelight dinner", content.flowerBed && "a flower bed"].filter(Boolean);
@@ -185,6 +188,8 @@ export default function Home() {
   }
 
   async function preparePreview(indices: number[]) {
+    setDownloadError("");
+    setDownloadNotice("");
     const requiredFields: Array<[string, string]> = [
       [content.frontTitle, "front title"], [content.message, "message"], [content.sender, "sender"],
       [content.backTitle, "voucher title"], [content.villaType, "villa type"], [content.guestName, "guest name"],
@@ -227,11 +232,20 @@ export default function Home() {
     return { pdf, fileName: `${guestFileName}${pageSuffix} - ${generatedAt}.pdf` };
   }
 
-  function downloadPreviewPdf() {
-    const generatedPdf = createPreviewPdf();
-    if (!generatedPdf) return;
-    generatedPdf.pdf.save(generatedPdf.fileName);
-    setPreview(null);
+  async function downloadPreviewPdf() {
+    setIsDownloading(true);
+    setDownloadError("");
+    try {
+      const generatedPdf = createPreviewPdf();
+      if (!generatedPdf) throw new Error("The PDF preview is unavailable.");
+      await generatedPdf.pdf.save(generatedPdf.fileName, { returnPromise: true });
+      setPreview(null);
+      setDownloadNotice("PDF downloaded. On iPhone, find it in the Files app under Downloads.");
+    } catch {
+      setDownloadError("The PDF could not be downloaded. Please try again.");
+    } finally {
+      setIsDownloading(false);
+    }
   }
 
   if (!isUnlocked) {
@@ -297,6 +311,7 @@ export default function Home() {
         </div>
       </header>
       {exportError && <div role="alert" className="mx-4 mt-4 bg-destructive/10 px-4 py-3 font-secondary text-sm text-destructive sm:mx-0">{exportError}</div>}
+      {downloadNotice && <div role="status" className="mx-4 mt-4 bg-emerald-500/10 px-4 py-3 font-secondary text-sm text-emerald-700 dark:text-emerald-400 sm:mx-0">{downloadNotice}</div>}
 
       <div className="mt-0 grid items-start gap-5 sm:mt-5 lg:mt-8 xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-8">
       <section className="self-start overflow-hidden bg-white font-secondary dark:bg-zinc-900 sm:rounded-2xl sm:shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] xl:sticky xl:top-24" aria-labelledby="editor-title">
@@ -527,7 +542,7 @@ export default function Home() {
       </section>
       </div>
 
-      <Dialog open={preview !== null} onOpenChange={(open) => !open && setPreview(null)}>
+      <Dialog open={preview !== null} onOpenChange={(open) => !open && !isDownloading && setPreview(null)}>
         <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] max-w-none overflow-y-auto p-3 sm:w-[calc(100%-2rem)] sm:max-w-none sm:p-5 lg:w-[min(1200px,calc(100%-3rem))]">
           <DialogHeader>
             <DialogTitle>PDF preview</DialogTitle>
@@ -538,9 +553,10 @@ export default function Home() {
               <Image key={`${preview.indices[index]}-${image.length}`} src={image} alt={`${preview.indices[index] === 0 ? "Front" : "Back"} voucher preview`} width={1050} height={495} unoptimized className="h-auto w-full" />
             ))}
           </div>
+          {downloadError && <p role="alert" className="text-sm text-destructive">{downloadError}</p>}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPreview(null)}>Cancel</Button>
-            <Button onClick={downloadPreviewPdf}>Download PDF</Button>
+            <Button variant="outline" onClick={() => setPreview(null)} disabled={isDownloading}>Cancel</Button>
+            <Button onClick={downloadPreviewPdf} disabled={isDownloading}>{isDownloading ? "Downloading..." : "Download PDF"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
