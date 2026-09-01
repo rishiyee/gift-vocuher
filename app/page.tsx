@@ -129,7 +129,9 @@ export default function Home() {
   const [inclusionsVerified, setInclusionsVerified] = useState(false);
   const [exportError, setExportError] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [downloadError, setDownloadError] = useState("");
+  const [shareError, setShareError] = useState("");
   const [downloadNotice, setDownloadNotice] = useState("");
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
@@ -137,6 +139,7 @@ export default function Home() {
   const inclusionText = selectedInclusions.length ? `Includes ${selectedInclusions.join(" and ")}.` : "";
   const displayMessage = content.message.trim();
   const messageState = !content.message.trim() ? "Empty" : content.message === DEFAULT_MESSAGE ? "Autofilled" : "Custom";
+  const isPdfActionPending = isDownloading || isSharing;
 
   useEffect(() => {
     window.localStorage.setItem(VOUCHER_STORAGE_KEY, JSON.stringify(content));
@@ -168,7 +171,7 @@ export default function Home() {
     }
   }
 
-  async function renderPage(index: number) {
+  async function renderPage(index: number, width = 2100, height = 990) {
     const canvas = canvasRefs.current[index];
     if (!canvas) throw new Error("Voucher canvas is not available");
     await withTimeout(document.fonts.ready, 8000, "Fonts took too long to load");
@@ -181,14 +184,24 @@ export default function Home() {
       "Voucher assets took too long to load",
     );
     return withTimeout(
-      toPng(canvas, { canvasWidth: 2100, canvasHeight: 990, pixelRatio: 1, cacheBust: false, skipAutoScale: true, style: { border: "none", borderRadius: "0px" } }),
+      toPng(canvas, { canvasWidth: width, canvasHeight: height, pixelRatio: 1, cacheBust: false, skipAutoScale: true, style: { border: "none", borderRadius: "0px" } }),
       20000,
       "PDF preview rendering timed out",
     );
   }
 
+  async function renderPages(indices: number[], width = 2100, height = 990) {
+    const images: string[] = [];
+    for (const index of indices) {
+      images.push(await renderPage(index, width, height));
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    }
+    return images;
+  }
+
   async function preparePreview(indices: number[]) {
     setDownloadError("");
+    setShareError("");
     setDownloadNotice("");
     const requiredFields: Array<[string, string]> = [
       [content.frontTitle, "front title"], [content.message, "message"], [content.sender, "sender"],
@@ -210,10 +223,19 @@ export default function Home() {
     const exportTarget = indices.length === 2 ? "all" : indices[0];
     setExporting(exportTarget);
     try {
-      const images = await Promise.all(indices.map(renderPage));
+      let images: string[];
+      try {
+        images = await renderPages(indices);
+      } catch (highResolutionError) {
+        console.warn("High-resolution voucher rendering failed; retrying once.", highResolutionError);
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+        images = await renderPages(indices);
+      }
       setPreview({ indices, images });
-    } catch {
-      setExportError("The PDF preview could not be prepared. Please wait for the voucher images to appear, then try again.");
+    } catch (error) {
+      console.error("Voucher PDF preview rendering failed.", error);
+      const pageSuggestion = indices.length === 2 ? " You can also try downloading one page at a time." : "";
+      setExportError(`The PDF preview could not be prepared. Please wait for the voucher images to appear, then try again.${pageSuggestion}`);
     } finally {
       setExporting(null);
     }
@@ -221,10 +243,10 @@ export default function Home() {
 
   function createPreviewPdf() {
     if (!preview) return null;
-    const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [2100, 990], hotfixes: ["px_scaling"] });
+    const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [1050, 495], hotfixes: ["px_scaling"] });
     preview.images.forEach((image, imageIndex) => {
-      if (imageIndex > 0) pdf.addPage([2100, 990], "landscape");
-      pdf.addImage(image, "PNG", 0, 0, 2100, 990, undefined, "FAST");
+      if (imageIndex > 0) pdf.addPage([1050, 495], "landscape");
+      pdf.addImage(image, "PNG", 0, 0, 1050, 495, undefined, "FAST");
     });
     const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
     const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
@@ -245,6 +267,32 @@ export default function Home() {
       setDownloadError("The PDF could not be downloaded. Please try again.");
     } finally {
       setIsDownloading(false);
+    }
+  }
+
+  async function sharePreviewPdf() {
+    setIsSharing(true);
+    setShareError("");
+    try {
+      const generatedPdf = createPreviewPdf();
+      if (!generatedPdf) throw new Error("The PDF preview is unavailable.");
+      const file = new File([generatedPdf.pdf.output("blob")], generatedPdf.fileName, { type: "application/pdf" });
+      const shareData = {
+        title: "Gift voucher",
+        text: `Gift voucher for ${content.guestName.trim() || "the guest"}`,
+        files: [file],
+      };
+      if (!navigator.share || (navigator.canShare && !navigator.canShare(shareData))) {
+        setShareError("PDF sharing is unavailable in this browser. Use Download PDF instead.");
+        return;
+      }
+      await navigator.share(shareData);
+      setPreview(null);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setShareError("The PDF could not be shared. Please try again or use Download PDF.");
+    } finally {
+      setIsSharing(false);
     }
   }
 
@@ -542,11 +590,11 @@ export default function Home() {
       </section>
       </div>
 
-      <Dialog open={preview !== null} onOpenChange={(open) => !open && !isDownloading && setPreview(null)}>
+      <Dialog open={preview !== null} onOpenChange={(open) => !open && !isPdfActionPending && setPreview(null)}>
         <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] max-w-none overflow-y-auto p-3 sm:w-[calc(100%-2rem)] sm:max-w-none sm:p-5 lg:w-[min(1200px,calc(100%-3rem))]">
           <DialogHeader>
             <DialogTitle>PDF preview</DialogTitle>
-            <DialogDescription>Review the selected voucher pages before downloading the PDF.</DialogDescription>
+            <DialogDescription>Review the selected voucher pages, then download or share the PDF.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4" aria-label="Selected PDF pages">
             {preview?.images.map((image, index) => (
@@ -554,9 +602,11 @@ export default function Home() {
             ))}
           </div>
           {downloadError && <p role="alert" className="text-sm text-destructive">{downloadError}</p>}
+          {shareError && <p role="alert" className="text-sm text-destructive">{shareError}</p>}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPreview(null)} disabled={isDownloading}>Cancel</Button>
-            <Button onClick={downloadPreviewPdf} disabled={isDownloading}>{isDownloading ? "Downloading..." : "Download PDF"}</Button>
+            <Button variant="outline" onClick={() => setPreview(null)} disabled={isPdfActionPending}>Cancel</Button>
+            <Button variant="outline" onClick={sharePreviewPdf} disabled={isPdfActionPending}>{isSharing ? "Sharing..." : "Share PDF"}</Button>
+            <Button onClick={downloadPreviewPdf} disabled={isPdfActionPending}>{isDownloading ? "Downloading..." : "Download PDF"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
