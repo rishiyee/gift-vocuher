@@ -229,6 +229,21 @@ export default function Home() {
     return { pdf, fileName: `${guestFileName}${pageSuffix} - ${generatedAt}.pdf` };
   }
 
+  function downloadPdfBlob() {
+    const generatedPdf = createPreviewPdf();
+    if (!generatedPdf) return;
+    const pdfUrl = URL.createObjectURL(generatedPdf.pdf.output("blob"));
+    const downloadLink = document.createElement("a");
+    downloadLink.href = pdfUrl;
+    downloadLink.download = generatedPdf.fileName;
+    downloadLink.target = "_blank";
+    downloadLink.rel = "noopener";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+    window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
+  }
+
   async function sharePreviewPdf() {
     const generatedPdf = createPreviewPdf();
     if (!generatedPdf) return;
@@ -243,12 +258,11 @@ export default function Home() {
         setPreview(null);
         return;
       }
-      generatedPdf.pdf.save(generatedPdf.fileName);
-      window.open(`https://wa.me/?text=${encodeURIComponent(`${shareText}. The PDF has been downloaded—please attach it to this chat.`)}`, "_blank", "noopener,noreferrer");
-      setPreview(null);
+      downloadPdfBlob();
+      setShareError("Direct file sharing is unavailable in this browser. The PDF was opened or downloaded; attach it in WhatsApp manually.");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      setShareError("The PDF could not be shared. Please try again.");
+      setShareError("Safari could not share the PDF directly. Use Download PDF, then attach the downloaded file in WhatsApp.");
     } finally {
       setIsSharing(false);
     }
@@ -561,6 +575,7 @@ export default function Home() {
           {shareError && <p role="alert" className="text-sm text-destructive">{shareError}</p>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setPreview(null)} disabled={isSharing}>Cancel</Button>
+            <Button variant="outline" onClick={downloadPdfBlob} disabled={isSharing}>Download PDF</Button>
             <Button onClick={sharePreviewPdf} disabled={isSharing}>{isSharing ? "Opening share..." : "Share PDF"}</Button>
           </DialogFooter>
         </DialogContent>
