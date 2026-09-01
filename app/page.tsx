@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, isValid, parse } from "date-fns";
 import { toPng } from "html-to-image";
+import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
@@ -24,6 +25,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 const pages = ["Front", "Back"];
 const APP_PIN = "2026";
 const VOUCHER_STORAGE_KEY = "gift-voucher-content-v2";
+const PDF_PAGE_WIDTH = 1050;
+const PDF_PAGE_HEIGHT = 495;
+const PDF_EXPORT_SCALE = 3;
+const PDF_EXPORT_WIDTH = PDF_PAGE_WIDTH * PDF_EXPORT_SCALE;
+const PDF_EXPORT_HEIGHT = PDF_PAGE_HEIGHT * PDF_EXPORT_SCALE;
 const DEFAULT_MESSAGE = "Wishing you both a lifetime of love, laughter, and beautiful moments together.\n\nMay this little getaway be the beginning of countless wonderful journeys and cherished memories.";
 
 function withTimeout<Value>(promise: Promise<Value>, timeoutMs: number, message: string) {
@@ -171,7 +177,7 @@ export default function Home() {
     }
   }
 
-  async function renderPage(index: number, width = 2100, height = 990) {
+  async function renderPage(index: number, width = PDF_EXPORT_WIDTH, height = PDF_EXPORT_HEIGHT) {
     const canvas = canvasRefs.current[index];
     if (!canvas) throw new Error("Voucher canvas is not available");
     await withTimeout(document.fonts.ready, 8000, "Fonts took too long to load");
@@ -190,10 +196,32 @@ export default function Home() {
     );
   }
 
-  async function renderPages(indices: number[], width = 2100, height = 990) {
+  async function renderPages(indices: number[], width = PDF_EXPORT_WIDTH, height = PDF_EXPORT_HEIGHT) {
     const images: string[] = [];
     for (const index of indices) {
       images.push(await renderPage(index, width, height));
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    }
+    return images;
+  }
+
+  async function renderPagesWithCanvas(indices: number[], width = PDF_EXPORT_WIDTH) {
+    const images: string[] = [];
+    for (const index of indices) {
+      const canvas = canvasRefs.current[index];
+      if (!canvas) throw new Error("Voucher canvas is not available");
+      const renderedCanvas = await withTimeout(
+        html2canvas(canvas, {
+          backgroundColor: null,
+          imageTimeout: 8000,
+          logging: false,
+          scale: width / canvas.offsetWidth,
+          useCORS: true,
+        }),
+        30000,
+        "Safari-compatible PDF preview rendering timed out",
+      );
+      images.push(renderedCanvas.toDataURL("image/png"));
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
     }
     return images;
@@ -227,9 +255,9 @@ export default function Home() {
       try {
         images = await renderPages(indices);
       } catch (highResolutionError) {
-        console.warn("High-resolution voucher rendering failed; retrying once.", highResolutionError);
+        console.warn("Primary voucher rendering failed; using the WebKit-compatible renderer.", highResolutionError);
         await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-        images = await renderPages(indices);
+        images = await renderPagesWithCanvas(indices);
       }
       setPreview({ indices, images });
     } catch (error) {
@@ -243,10 +271,10 @@ export default function Home() {
 
   function createPreviewPdf() {
     if (!preview) return null;
-    const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [1050, 495], hotfixes: ["px_scaling"] });
+    const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT], hotfixes: ["px_scaling"] });
     preview.images.forEach((image, imageIndex) => {
-      if (imageIndex > 0) pdf.addPage([1050, 495], "landscape");
-      pdf.addImage(image, "PNG", 0, 0, 1050, 495, undefined, "FAST");
+      if (imageIndex > 0) pdf.addPage([PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT], "landscape");
+      pdf.addImage(image, "PNG", 0, 0, PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT, undefined, "FAST");
     });
     const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
     const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
