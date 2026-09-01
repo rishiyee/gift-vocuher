@@ -128,8 +128,6 @@ export default function Home() {
   const [pasteStatus, setPasteStatus] = useState("");
   const [inclusionsVerified, setInclusionsVerified] = useState(false);
   const [exportError, setExportError] = useState("");
-  const [isSharing, setIsSharing] = useState(false);
-  const [shareError, setShareError] = useState("");
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [content.candlelightDinner && "a candlelight dinner", content.flowerBed && "a flower bed"].filter(Boolean);
@@ -229,43 +227,11 @@ export default function Home() {
     return { pdf, fileName: `${guestFileName}${pageSuffix} - ${generatedAt}.pdf` };
   }
 
-  function downloadPdfBlob() {
+  function downloadPreviewPdf() {
     const generatedPdf = createPreviewPdf();
     if (!generatedPdf) return;
-    const pdfUrl = URL.createObjectURL(generatedPdf.pdf.output("blob"));
-    const downloadLink = document.createElement("a");
-    downloadLink.href = pdfUrl;
-    downloadLink.download = generatedPdf.fileName;
-    downloadLink.target = "_blank";
-    downloadLink.rel = "noopener";
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    downloadLink.remove();
-    window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
-  }
-
-  async function sharePreviewPdf() {
-    const generatedPdf = createPreviewPdf();
-    if (!generatedPdf) return;
-    setIsSharing(true);
-    setShareError("");
-    const shareText = `Gift voucher for ${content.guestName.trim() || "the guest"}`;
-    try {
-      const file = new File([generatedPdf.pdf.output("blob")], generatedPdf.fileName, { type: "application/pdf" });
-      const shareData = { title: "Gift voucher", text: shareText, files: [file] };
-      if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
-        await navigator.share(shareData);
-        setPreview(null);
-        return;
-      }
-      downloadPdfBlob();
-      setShareError("Direct file sharing is unavailable in this browser. The PDF was opened or downloaded; attach it in WhatsApp manually.");
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setShareError("Safari could not share the PDF directly. Use Download PDF, then attach the downloaded file in WhatsApp.");
-    } finally {
-      setIsSharing(false);
-    }
+    generatedPdf.pdf.save(generatedPdf.fileName);
+    setPreview(null);
   }
 
   if (!isUnlocked) {
@@ -318,7 +284,7 @@ export default function Home() {
           {isDark ? <Sun /> : <Moon />}
         </Button>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button disabled={exporting !== null} />}>{exporting !== null ? "Preparing PDF..." : "Share PDF"}</DropdownMenuTrigger>
+          <DropdownMenuTrigger render={<Button disabled={exporting !== null} />}>{exporting !== null ? "Preparing PDF..." : "Download PDF"}</DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuGroup>
               <DropdownMenuLabel>Choose pages</DropdownMenuLabel>
@@ -565,18 +531,16 @@ export default function Home() {
         <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] max-w-none overflow-y-auto p-3 sm:w-[calc(100%-2rem)] sm:max-w-none sm:p-5 lg:w-[min(1200px,calc(100%-3rem))]">
           <DialogHeader>
             <DialogTitle>PDF preview</DialogTitle>
-            <DialogDescription>Review the selected voucher pages before sharing them to WhatsApp.</DialogDescription>
+            <DialogDescription>Review the selected voucher pages before downloading the PDF.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4" aria-label="Selected PDF pages">
             {preview?.images.map((image, index) => (
               <Image key={`${preview.indices[index]}-${image.length}`} src={image} alt={`${preview.indices[index] === 0 ? "Front" : "Back"} voucher preview`} width={1050} height={495} unoptimized className="h-auto w-full" />
             ))}
           </div>
-          {shareError && <p role="alert" className="text-sm text-destructive">{shareError}</p>}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPreview(null)} disabled={isSharing}>Cancel</Button>
-            <Button variant="outline" onClick={downloadPdfBlob} disabled={isSharing}>Download PDF</Button>
-            <Button onClick={sharePreviewPdf} disabled={isSharing}>{isSharing ? "Opening share..." : "Share PDF"}</Button>
+            <Button variant="outline" onClick={() => setPreview(null)}>Cancel</Button>
+            <Button onClick={downloadPreviewPdf}>Download PDF</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
