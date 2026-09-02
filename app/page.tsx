@@ -12,7 +12,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, isValid, parse } from "date-fns";
-import { toJpeg } from "html-to-image";
+import { toPng } from "html-to-image";
 import { jsPDF } from "jspdf";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
@@ -28,11 +28,6 @@ const DEFAULT_MESSAGE = "Wishing you both a lifetime of love, laughter, and beau
 
 function toTitleCase(value: string) {
   return value.toLowerCase().replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
-}
-
-function isIOSDevice() {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent)
-    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
 const initialContent = {
@@ -172,7 +167,7 @@ export default function Home() {
       image.addEventListener("load", () => resolve(), { once: true });
       image.addEventListener("error", () => resolve(), { once: true });
     })));
-    return toJpeg(canvas, { canvasWidth: 2100, canvasHeight: 990, pixelRatio: 1, quality: 0.92, cacheBust: false, style: { border: "none", borderRadius: "0px" } });
+    return toPng(canvas, { canvasWidth: 2100, canvasHeight: 990, pixelRatio: 1, cacheBust: true, style: { borderRadius: "0px" } });
   }
 
   async function preparePreview(indices: number[]) {
@@ -211,49 +206,23 @@ export default function Home() {
 
   function savePreviewAsPdf() {
     if (!preview) return;
-    let pdfUrl: string | null = null;
-
     try {
       setExportError("");
       const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [2100, 990], hotfixes: ["px_scaling"] });
       preview.images.forEach((image, imageIndex) => {
         if (imageIndex > 0) pdf.addPage([2100, 990], "landscape");
-        pdf.addImage(image, "JPEG", 0, 0, 2100, 990, undefined, "FAST");
+        pdf.addImage(image, "PNG", 0, 0, 2100, 990, undefined, "FAST");
       });
       const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
       const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
       const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
       const fileName = `${guestFileName}${pageSuffix} - ${generatedAt}.pdf`;
-      const pdfBlob = pdf.output("blob");
-      if (!pdfBlob.size) throw new Error("The generated PDF is empty.");
-      pdfUrl = URL.createObjectURL(pdfBlob);
-
-      if (isIOSDevice()) {
-        const pdfWindow = window.open(pdfUrl, "_blank");
-        if (pdfWindow) {
-          pdfWindow.focus();
-        } else {
-          window.location.assign(pdfUrl);
-        }
-        setDownloadNotice("PDF opened in Safari. Tap Share, then Save to Files.");
-      } else {
-        const link = document.createElement("a");
-        link.href = pdfUrl;
-        link.download = fileName;
-        link.style.display = "none";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setDownloadNotice("PDF download started.");
-      }
-
-      const revokeDelay = isIOSDevice() ? 5 * 60_000 : 60_000;
-      window.setTimeout(() => URL.revokeObjectURL(pdfUrl!), revokeDelay);
+      pdf.save(fileName);
       setPreview(null);
+      setDownloadNotice("PDF download started.");
     } catch (error) {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
       console.error("PDF download failed.", error);
-      setExportError("The PDF could not be opened. Close other Safari tabs to free memory, then try one page at a time.");
+      setExportError("The PDF could not be downloaded. Please try one page at a time.");
     }
   }
 
