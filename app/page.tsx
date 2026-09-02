@@ -214,9 +214,31 @@ export default function Home() {
     const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
     const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
     const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
-    pdf.save(`${guestFileName}${pageSuffix} - ${generatedAt}.pdf`);
+    const fileName = `${guestFileName}${pageSuffix} - ${generatedAt}.pdf`;
+    const dataUri = pdf.output("datauristring");
+    const encodedPdf = dataUri.slice(dataUri.indexOf(",") + 1);
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "/api/download-pdf";
+    form.style.display = "none";
+
+    const pdfField = document.createElement("input");
+    pdfField.type = "hidden";
+    pdfField.name = "pdf";
+    pdfField.value = encodedPdf;
+    form.appendChild(pdfField);
+
+    const fileNameField = document.createElement("input");
+    fileNameField.type = "hidden";
+    fileNameField.name = "fileName";
+    fileNameField.value = fileName;
+    form.appendChild(fileNameField);
+
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
     setPreview(null);
-    setDownloadNotice("PDF downloaded. On iPhone, find it in the Files app under Downloads.");
+    setDownloadNotice("PDF download started. On iPhone, find it in the Files app under Downloads.");
   }
 
   if (!isUnlocked) {
