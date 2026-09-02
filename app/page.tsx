@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, isValid, parse } from "date-fns";
 import { toJpeg, toPng } from "html-to-image";
+import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
@@ -200,7 +201,11 @@ export default function Home() {
         }
       } catch (error) {
         console.error("Gift voucher preparation failed.", error);
-        if (!cancelled) setExportError("The gift voucher could not be prepared. Please go back and try again.");
+        if (!cancelled) {
+          setPreparationProgress(0);
+          setPreparationRequested(false);
+          setExportError("The gift voucher could not be prepared. Choose Fast quality and try again.");
+        }
       } finally {
         if (!cancelled) setExporting(null);
       }
@@ -231,7 +236,7 @@ export default function Home() {
     }
   }
 
-  async function renderPage(index: number, quality?: ExportQuality) {
+  async function renderPage(index: number, quality?: ExportQuality, useLegacyRenderer = false) {
     const canvas = canvasRefs.current[index];
     if (!canvas) throw new Error("Voucher canvas is not available");
     await document.fonts.ready;
@@ -241,6 +246,19 @@ export default function Home() {
     })));
     const canvasWidth = quality === "fast" ? 1200 : quality === "balanced" ? 1600 : 2100;
     const useJpeg = quality === "fast" || quality === "balanced";
+    if (useLegacyRenderer) {
+      const renderedCanvas = await Promise.race([
+        html2canvas(canvas, {
+          backgroundColor: null,
+          logging: false,
+          scale: canvasWidth / Math.max(canvas.getBoundingClientRect().width, 1),
+          useCORS: true,
+          imageTimeout: 12_000,
+        }),
+        new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("Voucher rendering timed out")), 25_000)),
+      ]);
+      return renderedCanvas.toDataURL("image/jpeg", quality === "fast" ? 0.86 : quality === "high" ? 0.95 : 0.92);
+    }
     const renderOptions = {
       canvasWidth,
       canvasHeight: Math.round(canvasWidth * 99 / 210),
@@ -341,11 +359,13 @@ export default function Home() {
 
   async function createMobileGiftSizePdf(quality: ExportQuality, onProgress: (percent: number) => void) {
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99], compress: true });
+    const useLegacyRenderer = shouldUseConstrainedIphoneExport();
     for (const index of [0, 1]) {
-      const image = await renderPage(index, quality);
+      onProgress(index === 0 ? 10 : 55);
+      const image = await renderPage(index, quality, useLegacyRenderer);
       if (index > 0) pdf.addPage([210, 99], "landscape");
       pdf.addImage(image, image.startsWith("data:image/jpeg") ? "JPEG" : "PNG", 0, 0, 210, 99, undefined, "FAST");
-      onProgress(index === 0 ? 45 : 85);
+      onProgress(index === 0 ? 50 : 90);
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
     }
     return {
