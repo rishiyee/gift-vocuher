@@ -178,8 +178,7 @@ export default function Home() {
       await Promise.resolve();
       if (!cancelled) setExporting("all");
       try {
-        const images = [await renderPage(0), await renderPage(1)];
-        const { blob, fileName } = createGiftSizePdf(images, [0, 1]);
+        const { blob, fileName } = await createMobileGiftSizePdf();
         if (!cancelled) setMobileShareFile(new File([blob], fileName, { type: "application/pdf" }));
       } catch (error) {
         console.error("Gift voucher preparation failed.", error);
@@ -214,7 +213,7 @@ export default function Home() {
     }
   }
 
-  async function renderPage(index: number) {
+  async function renderPage(index: number, optimizedForOlderIphone = false) {
     const canvas = canvasRefs.current[index];
     if (!canvas) throw new Error("Voucher canvas is not available");
     await document.fonts.ready;
@@ -222,9 +221,10 @@ export default function Home() {
       image.addEventListener("load", () => resolve(), { once: true });
       image.addEventListener("error", () => resolve(), { once: true });
     })));
+    const canvasWidth = optimizedForOlderIphone ? 1680 : 2100;
     return toPng(canvas, {
-      canvasWidth: 2100,
-      canvasHeight: 990,
+      canvasWidth,
+      canvasHeight: Math.round(canvasWidth * 99 / 210),
       pixelRatio: 1,
       cacheBust: true,
       style: { borderRadius: "0px" },
@@ -291,17 +291,43 @@ export default function Home() {
   }
 
   function createGiftSizePdf(images: string[], indices: number[]) {
-    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99] });
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99], compress: true });
     images.forEach((image, imageIndex) => {
       if (imageIndex > 0) pdf.addPage([210, 99], "landscape");
       pdf.addImage(image, "PNG", 0, 0, 210, 99, undefined, "FAST");
     });
-    const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
-    const pageSuffix = indices.length === 2 ? " - Front and Back" : indices[0] === 0 ? " - Front" : " - Back";
-    const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
     return {
       blob: pdf.output("blob"),
-      fileName: `${guestFileName}${pageSuffix} - ${generatedAt}.pdf`,
+      fileName: createPdfFileName(indices),
+    };
+  }
+
+  function createPdfFileName(indices: number[]) {
+    const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
+    const pageSuffix = indices.length === 2 ? " - Front and Back" : indices[0] === 0 ? " - Front" : " - Back";
+    return `${guestFileName}${pageSuffix} - ${format(new Date(), "yyyy-MM-dd_HH-mm-ss")}.pdf`;
+  }
+
+  function shouldUseConstrainedIphoneExport() {
+    if (!/iPhone|iPod/.test(navigator.userAgent)) return false;
+    const iosMajorVersion = Number(navigator.userAgent.match(/OS (\d+)_/)?.[1] ?? 0);
+    return (iosMajorVersion > 0 && iosMajorVersion <= 16)
+      || navigator.hardwareConcurrency <= 4
+      || window.screen.width <= 375;
+  }
+
+  async function createMobileGiftSizePdf() {
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99], compress: true });
+    const useConstrainedExport = shouldUseConstrainedIphoneExport();
+    for (const index of [0, 1]) {
+      const image = await renderPage(index, useConstrainedExport);
+      if (index > 0) pdf.addPage([210, 99], "landscape");
+      pdf.addImage(image, "PNG", 0, 0, 210, 99, undefined, "FAST");
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    }
+    return {
+      blob: pdf.output("blob"),
+      fileName: createPdfFileName([0, 1]),
     };
   }
 
