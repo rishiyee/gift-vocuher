@@ -13,10 +13,10 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, isValid, parse } from "date-fns";
 import { toPng } from "html-to-image";
-import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,42 +24,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 const pages = ["Front", "Back"];
 const APP_PIN = "1947";
 const VOUCHER_STORAGE_KEY = "gift-voucher-content-v2";
-const PDF_PAGE_WIDTH = 1050;
-const PDF_PAGE_HEIGHT = 495;
-const PDF_EXPORT_SCALE = 3;
-const PDF_EXPORT_WIDTH = PDF_PAGE_WIDTH * PDF_EXPORT_SCALE;
-const PDF_EXPORT_HEIGHT = PDF_PAGE_HEIGHT * PDF_EXPORT_SCALE;
 const DEFAULT_MESSAGE = "Wishing you both a lifetime of love, laughter, and beautiful moments together.\n\nMay this little getaway be the beginning of countless wonderful journeys and cherished memories.";
-
-function withTimeout<Value>(promise: Promise<Value>, timeoutMs: number, message: string) {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error(message)), timeoutMs)),
-  ]);
-}
 
 function toTitleCase(value: string) {
   return value.toLowerCase().replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
-}
-
-function isIOSDevice() {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent)
-    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-}
-
-function blobToDataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("The PDF could not be read."));
-    reader.onloadend = () => {
-      if (typeof reader.result !== "string") {
-        reject(new Error("The PDF download URL could not be created."));
-        return;
-      }
-      resolve(reader.result);
-    };
-    reader.readAsDataURL(blob);
-  });
 }
 
 const initialContent = {
@@ -149,6 +117,7 @@ export default function Home() {
   const [content, setContent] = useState<VoucherContent>(readSavedContent);
   const [isDark, setIsDark] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("gift-voucher-theme") === "dark");
   const [exporting, setExporting] = useState<number | "all" | null>(null);
+  const [preview, setPreview] = useState<{ indices: number[]; images: string[] } | null>(null);
   const [pasteStatus, setPasteStatus] = useState("");
   const [inclusionsVerified, setInclusionsVerified] = useState(false);
   const [exportError, setExportError] = useState("");
@@ -190,54 +159,15 @@ export default function Home() {
     }
   }
 
-  async function renderPage(index: number, width = PDF_EXPORT_WIDTH, height = PDF_EXPORT_HEIGHT) {
+  async function renderPage(index: number) {
     const canvas = canvasRefs.current[index];
     if (!canvas) throw new Error("Voucher canvas is not available");
-    await withTimeout(document.fonts.ready, 8000, "Fonts took too long to load");
-    await withTimeout(
-      Promise.all(Array.from(canvas.querySelectorAll("img")).map(async (image) => {
-        if (image.complete) return;
-        try { await image.decode(); } catch { /* Decorative assets may already be available to the renderer. */ }
-      })),
-      8000,
-      "Voucher assets took too long to load",
-    );
-    return withTimeout(
-      toPng(canvas, { canvasWidth: width, canvasHeight: height, pixelRatio: 1, cacheBust: false, skipAutoScale: true, style: { border: "none", borderRadius: "0px" } }),
-      20000,
-      "PDF preview rendering timed out",
-    );
-  }
-
-  async function renderPages(indices: number[], width = PDF_EXPORT_WIDTH, height = PDF_EXPORT_HEIGHT) {
-    const images: string[] = [];
-    for (const index of indices) {
-      images.push(await renderPage(index, width, height));
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-    }
-    return images;
-  }
-
-  async function renderPagesWithCanvas(indices: number[], width = PDF_EXPORT_WIDTH) {
-    const images: string[] = [];
-    for (const index of indices) {
-      const canvas = canvasRefs.current[index];
-      if (!canvas) throw new Error("Voucher canvas is not available");
-      const renderedCanvas = await withTimeout(
-        html2canvas(canvas, {
-          backgroundColor: null,
-          imageTimeout: 8000,
-          logging: false,
-          scale: width / canvas.offsetWidth,
-          useCORS: true,
-        }),
-        30000,
-        "Safari-compatible PDF preview rendering timed out",
-      );
-      images.push(renderedCanvas.toDataURL("image/png"));
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-    }
-    return images;
+    await document.fonts.ready;
+    await Promise.all(Array.from(canvas.querySelectorAll("img")).map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => {
+      image.addEventListener("load", () => resolve(), { once: true });
+      image.addEventListener("error", () => resolve(), { once: true });
+    })));
+    return toPng(canvas, { canvasWidth: 2100, canvasHeight: 990, pixelRatio: 1, cacheBust: true, style: { border: "none", borderRadius: "0px" } });
   }
 
   async function preparePreview(indices: number[]) {
@@ -259,30 +189,13 @@ export default function Home() {
       return;
     }
     setExportError("");
-    const iosDownloadWindow = isIOSDevice() ? window.open("", "_blank") : null;
-    if (isIOSDevice() && !iosDownloadWindow) {
-      setExportError("Allow pop-ups for this site so the PDF can open on iPhone.");
-      return;
-    }
-    if (iosDownloadWindow) {
-      iosDownloadWindow.document.title = "Preparing gift voucher";
-      iosDownloadWindow.document.body.textContent = "Preparing your PDF…";
-    }
     const exportTarget = indices.length === 2 ? "all" : indices[0];
     setExporting(exportTarget);
     try {
-      let images: string[];
-      try {
-        images = await renderPages(indices);
-      } catch (highResolutionError) {
-        console.warn("Primary voucher rendering failed; using the WebKit-compatible renderer.", highResolutionError);
-        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-        images = await renderPagesWithCanvas(indices);
-      }
-      await downloadPdf(createPdf(indices, images), iosDownloadWindow);
+      const images = [];
+      for (const index of indices) images.push(await renderPage(index));
+      setPreview({ indices, images });
     } catch (error) {
-      iosDownloadWindow?.close();
-      if (error instanceof DOMException && error.name === "AbortError") return;
       console.error("Voucher PDF generation failed.", error);
       const pageSuggestion = indices.length === 2 ? " You can also try downloading one page at a time." : "";
       setExportError(`The PDF could not be prepared. Please wait for the voucher images to appear, then try again.${pageSuggestion}`);
@@ -291,28 +204,18 @@ export default function Home() {
     }
   }
 
-  function createPdf(indices: number[], images: string[]) {
-    const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT], hotfixes: ["px_scaling"] });
-    images.forEach((image, imageIndex) => {
-      if (imageIndex > 0) pdf.addPage([PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT], "landscape");
-      pdf.addImage(image, "PNG", 0, 0, PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT, undefined, "FAST");
+  function savePreviewAsPdf() {
+    if (!preview) return;
+    const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [2100, 990], hotfixes: ["px_scaling"] });
+    preview.images.forEach((image, imageIndex) => {
+      if (imageIndex > 0) pdf.addPage([2100, 990], "landscape");
+      pdf.addImage(image, "PNG", 0, 0, 2100, 990, undefined, "FAST");
     });
     const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
-    const pageSuffix = indices.length === 2 ? " - Front and Back" : indices[0] === 0 ? " - Front" : " - Back";
+    const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
     const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
-    return { pdf, fileName: `${guestFileName}${pageSuffix} - ${generatedAt}.pdf` };
-  }
-
-  async function downloadPdf(generatedPdf: ReturnType<typeof createPdf>, iosDownloadWindow: Window | null) {
-    if (isIOSDevice()) {
-      const pdfBlob = generatedPdf.pdf.output("blob");
-      if (!iosDownloadWindow) throw new Error("The iPhone PDF window was blocked.");
-      iosDownloadWindow.location.href = await blobToDataUrl(pdfBlob);
-      setDownloadNotice("PDF opened. Tap Share, then Save to Files to download it on iOS 18.");
-      return;
-    }
-
-    await generatedPdf.pdf.save(generatedPdf.fileName, { returnPromise: true });
+    pdf.save(`${guestFileName}${pageSuffix} - ${generatedAt}.pdf`);
+    setPreview(null);
     setDownloadNotice("PDF downloaded. On iPhone, find it in the Files app under Downloads.");
   }
 
@@ -610,6 +513,23 @@ export default function Home() {
       </section>
       </div>
 
+      <Dialog open={preview !== null} onOpenChange={(open) => !open && setPreview(null)}>
+        <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] max-w-none overflow-y-auto p-3 sm:w-[calc(100%-2rem)] sm:max-w-none sm:p-5 lg:w-[min(1200px,calc(100%-3rem))]">
+          <DialogHeader>
+            <DialogTitle>PDF preview</DialogTitle>
+            <DialogDescription>Review the selected voucher pages before downloading.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4" aria-label="Selected PDF pages">
+            {preview?.images.map((image, index) => (
+              <Image key={`${preview.indices[index]}-${image.length}`} src={image} alt={`${preview.indices[index] === 0 ? "Front" : "Back"} voucher preview`} width={1050} height={495} unoptimized className="h-auto w-full" />
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreview(null)}>Cancel</Button>
+            <Button onClick={savePreviewAsPdf}>Download PDF</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <p className="sr-only" aria-live="polite">{pasteStatus}</p>
     </main>
   );
