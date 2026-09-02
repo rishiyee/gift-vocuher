@@ -272,10 +272,10 @@ export default function Home() {
       setExportError("");
       setDownloadNotice("");
       setIsSavingPdf(true);
-      const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [2100, 990], hotfixes: ["px_scaling"] });
+      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99] });
       preview.images.forEach((image, imageIndex) => {
-        if (imageIndex > 0) pdf.addPage([2100, 990], "landscape");
-        pdf.addImage(image, "PNG", 0, 0, 2100, 990, undefined, "FAST");
+        if (imageIndex > 0) pdf.addPage([210, 99], "landscape");
+        pdf.addImage(image, "PNG", 0, 0, 210, 99, undefined, "FAST");
       });
       const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
       const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
@@ -610,7 +610,7 @@ export default function Home() {
         </div>
         <div className="voucher-print-chrome sticky bottom-0 -mx-4 -mb-4 grid grid-cols-[auto_1fr] gap-2.5 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
-          <Button onClick={printVoucher} disabled={exporting !== null}>{exporting !== null ? "Preparing…" : "Print / save PDF"}</Button>
+          <Button onClick={() => preparePreview([0, 1])} disabled={exporting !== null}>{exporting !== null ? "Preparing…" : "Create gift-size PDF"}</Button>
         </div>
       </section>
       </div>
