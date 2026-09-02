@@ -24,6 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 const pages = ["Front", "Back"];
 const APP_PIN = "1947";
 const VOUCHER_STORAGE_KEY = "gift-voucher-content-v2";
+const INCLUSIONS_VERIFIED_STORAGE_KEY = "gift-voucher-inclusions-verified";
 const DEFAULT_MESSAGE = "Wishing you both a lifetime of love, laughter, and beautiful moments together.\n\nMay this little getaway be the beginning of countless wonderful journeys and cherished memories.";
 
 function toTitleCase(value: string) {
@@ -119,7 +120,7 @@ export default function Home() {
   const [exporting, setExporting] = useState<number | "all" | null>(null);
   const [preview, setPreview] = useState<{ indices: number[]; images: string[] } | null>(null);
   const [pasteStatus, setPasteStatus] = useState("");
-  const [inclusionsVerified, setInclusionsVerified] = useState(false);
+  const [inclusionsVerified, setInclusionsVerified] = useState(() => typeof window !== "undefined" && window.localStorage.getItem(INCLUSIONS_VERIFIED_STORAGE_KEY) === "true");
   const [exportError, setExportError] = useState("");
   const [downloadNotice, setDownloadNotice] = useState("");
   const [isSavingPdf, setIsSavingPdf] = useState(false);
@@ -165,6 +166,10 @@ export default function Home() {
   useEffect(() => {
     window.localStorage.setItem(VOUCHER_STORAGE_KEY, JSON.stringify(content));
   }, [content]);
+
+  useEffect(() => {
+    window.localStorage.setItem(INCLUSIONS_VERIFIED_STORAGE_KEY, String(inclusionsVerified));
+  }, [inclusionsVerified]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
