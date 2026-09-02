@@ -47,6 +47,28 @@ function isIOSDevice() {
     || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
+function downloadBlobWithDataUrl(blob: Blob, fileName: string) {
+  return new Promise<void>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("The PDF could not be read."));
+    reader.onloadend = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("The PDF download URL could not be created."));
+        return;
+      }
+      const link = document.createElement("a");
+      link.href = reader.result;
+      link.download = fileName;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      resolve();
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
 const initialContent = {
   frontTitle: "GIFT\nVOUCHER",
   message: "",
@@ -280,13 +302,23 @@ export default function Home() {
 
   async function downloadPdf(generatedPdf: ReturnType<typeof createPdf>) {
     if (isIOSDevice()) {
-      const file = new File([generatedPdf.pdf.output("blob")], generatedPdf.fileName, { type: "application/pdf" });
+      const pdfBlob = generatedPdf.pdf.output("blob");
+      const file = new File([pdfBlob], generatedPdf.fileName, { type: "application/pdf" });
       const shareData = { files: [file] };
       if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
-        await navigator.share(shareData);
-        setDownloadNotice("On iPhone, choose Save to Files in the share sheet to keep the PDF.");
-        return;
+        try {
+          await navigator.share(shareData);
+          setDownloadNotice("On iPhone, choose Save to Files in the share sheet to keep the PDF.");
+          return;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") throw error;
+          // Older iOS versions can reject sharing after PDF rendering consumes the tap activation.
+        }
       }
+
+      await downloadBlobWithDataUrl(pdfBlob, generatedPdf.fileName);
+      setDownloadNotice("PDF downloaded. If it opens in a browser tab, use Share, then Save to Files.");
+      return;
     }
 
     await generatedPdf.pdf.save(generatedPdf.fileName, { returnPromise: true });
