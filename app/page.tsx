@@ -12,7 +12,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, isValid, parse } from "date-fns";
-import { toPng } from "html-to-image";
+import { toJpeg, toPng } from "html-to-image";
 import { jsPDF } from "jspdf";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
@@ -126,6 +126,7 @@ export default function Home() {
   const [mobileStep, setMobileStep] = useState(0);
   const [editorSections, setEditorSections] = useState<string[]>(["front"]);
   const [mobileShareFile, setMobileShareFile] = useState<File | null>(null);
+  const [preparationProgress, setPreparationProgress] = useState(0);
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [content.candlelightDinner && "a candlelight dinner", content.flowerBed && "a flower bed"].filter(Boolean);
@@ -156,6 +157,7 @@ export default function Home() {
     }
     const boundedStep = Math.max(0, Math.min(mobileSteps.length - 1, nextStep));
     setMobileShareFile(null);
+    setPreparationProgress(0);
     setMobileStep(boundedStep);
     setEditorSections(boundedStep === 0 ? ["front"] : boundedStep < 3 ? ["back"] : []);
     setExportError("");
@@ -178,7 +180,9 @@ export default function Home() {
       await Promise.resolve();
       if (!cancelled) setExporting("all");
       try {
-        const { blob, fileName } = await createMobileGiftSizePdf();
+        const { blob, fileName } = await createMobileGiftSizePdf((page) => {
+          if (!cancelled) setPreparationProgress(page);
+        });
         if (!cancelled) setMobileShareFile(new File([blob], fileName, { type: "application/pdf" }));
       } catch (error) {
         console.error("Gift voucher preparation failed.", error);
@@ -221,14 +225,17 @@ export default function Home() {
       image.addEventListener("load", () => resolve(), { once: true });
       image.addEventListener("error", () => resolve(), { once: true });
     })));
-    const canvasWidth = optimizedForOlderIphone ? 1680 : 2100;
-    return toPng(canvas, {
+    const canvasWidth = optimizedForOlderIphone ? 1400 : 2100;
+    const renderOptions = {
       canvasWidth,
       canvasHeight: Math.round(canvasWidth * 99 / 210),
       pixelRatio: 1,
-      cacheBust: true,
+      cacheBust: !optimizedForOlderIphone,
       style: { borderRadius: "0px" },
-    });
+    };
+    return optimizedForOlderIphone
+      ? toJpeg(canvas, { ...renderOptions, quality: 0.92 })
+      : toPng(canvas, renderOptions);
   }
 
   function validateVoucher() {
@@ -294,7 +301,7 @@ export default function Home() {
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99], compress: true });
     images.forEach((image, imageIndex) => {
       if (imageIndex > 0) pdf.addPage([210, 99], "landscape");
-      pdf.addImage(image, "PNG", 0, 0, 210, 99, undefined, "FAST");
+      pdf.addImage(image, image.startsWith("data:image/jpeg") ? "JPEG" : "PNG", 0, 0, 210, 99, undefined, "FAST");
     });
     return {
       blob: pdf.output("blob"),
@@ -316,13 +323,14 @@ export default function Home() {
       || window.screen.width <= 375;
   }
 
-  async function createMobileGiftSizePdf() {
+  async function createMobileGiftSizePdf(onPageReady: (page: number) => void) {
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99], compress: true });
     const useConstrainedExport = shouldUseConstrainedIphoneExport();
     for (const index of [0, 1]) {
       const image = await renderPage(index, useConstrainedExport);
       if (index > 0) pdf.addPage([210, 99], "landscape");
-      pdf.addImage(image, "PNG", 0, 0, 210, 99, undefined, "FAST");
+      pdf.addImage(image, image.startsWith("data:image/jpeg") ? "JPEG" : "PNG", 0, 0, 210, 99, undefined, "FAST");
+      onPageReady(index + 1);
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
     }
     return {
@@ -693,7 +701,7 @@ export default function Home() {
         </div>
         <div className="voucher-print-chrome sticky bottom-0 -mx-4 -mb-4 grid grid-cols-[auto_1fr] gap-2.5 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
-          <Button onClick={shareGiftSizePdf} disabled={!mobileShareFile}>{mobileShareFile ? "Share gift voucher" : "Preparing…"}</Button>
+          <Button onClick={shareGiftSizePdf} disabled={!mobileShareFile}>{mobileShareFile ? "Share gift voucher" : `Preparing ${preparationProgress + 1} of 2…`}</Button>
         </div>
       </section>
       </div>
