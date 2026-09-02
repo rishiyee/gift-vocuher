@@ -51,6 +51,7 @@ const initialContent = {
 };
 
 type VoucherContent = typeof initialContent;
+type ExportQuality = "fast" | "balanced" | "high";
 
 function readSavedContent(): VoucherContent {
   if (typeof window === "undefined") return initialContent;
@@ -127,6 +128,8 @@ export default function Home() {
   const [editorSections, setEditorSections] = useState<string[]>(["front"]);
   const [mobileShareFile, setMobileShareFile] = useState<File | null>(null);
   const [preparationProgress, setPreparationProgress] = useState(0);
+  const [exportQuality, setExportQuality] = useState<ExportQuality>("balanced");
+  const [preparationRequested, setPreparationRequested] = useState(false);
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [content.candlelightDinner && "a candlelight dinner", content.flowerBed && "a flower bed"].filter(Boolean);
@@ -134,6 +137,10 @@ export default function Home() {
   const displayMessage = content.message.trim();
   const messageState = !content.message.trim() ? "Empty" : content.message === DEFAULT_MESSAGE ? "Autofilled" : "Custom";
   const mobileSteps = ["Message", "Voucher", "Stay", "Review"];
+  const constrainedIphone = shouldUseConstrainedIphoneExport();
+  const exportTimeEstimate = constrainedIphone
+    ? { fast: "8–15 sec", balanced: "15–25 sec", high: "30–50 sec" }[exportQuality]
+    : { fast: "4–8 sec", balanced: "8–15 sec", high: "15–30 sec" }[exportQuality];
 
   function changeMobileStep(nextStep: number) {
     if (nextStep > mobileStep) {
@@ -158,6 +165,7 @@ export default function Home() {
     const boundedStep = Math.max(0, Math.min(mobileSteps.length - 1, nextStep));
     setMobileShareFile(null);
     setPreparationProgress(0);
+    setPreparationRequested(false);
     setMobileStep(boundedStep);
     setEditorSections(boundedStep === 0 ? ["front"] : boundedStep < 3 ? ["back"] : []);
     setExportError("");
@@ -174,16 +182,22 @@ export default function Home() {
   }, [isDark]);
 
   useEffect(() => {
-    if (mobileStep !== 3) return;
+    if (mobileStep !== 3 || !preparationRequested) return;
     let cancelled = false;
     void (async () => {
       await Promise.resolve();
-      if (!cancelled) setExporting("all");
+      if (!cancelled) {
+        setExporting("all");
+        setPreparationProgress(5);
+      }
       try {
-        const { blob, fileName } = await createMobileGiftSizePdf((page) => {
-          if (!cancelled) setPreparationProgress(page);
+        const { blob, fileName } = await createMobileGiftSizePdf(exportQuality, (percent) => {
+          if (!cancelled) setPreparationProgress(percent);
         });
-        if (!cancelled) setMobileShareFile(new File([blob], fileName, { type: "application/pdf" }));
+        if (!cancelled) {
+          setPreparationProgress(100);
+          setMobileShareFile(new File([blob], fileName, { type: "application/pdf" }));
+        }
       } catch (error) {
         console.error("Gift voucher preparation failed.", error);
         if (!cancelled) setExportError("The gift voucher could not be prepared. Please go back and try again.");
@@ -194,7 +208,7 @@ export default function Home() {
     return () => { cancelled = true; };
     // The PDF is prepared once when the final mobile step becomes visible.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mobileStep]);
+  }, [mobileStep, exportQuality, preparationRequested]);
 
   function unlockApp(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -217,7 +231,7 @@ export default function Home() {
     }
   }
 
-  async function renderPage(index: number, optimizedForOlderIphone = false) {
+  async function renderPage(index: number, quality?: ExportQuality) {
     const canvas = canvasRefs.current[index];
     if (!canvas) throw new Error("Voucher canvas is not available");
     await document.fonts.ready;
@@ -225,16 +239,17 @@ export default function Home() {
       image.addEventListener("load", () => resolve(), { once: true });
       image.addEventListener("error", () => resolve(), { once: true });
     })));
-    const canvasWidth = optimizedForOlderIphone ? 1400 : 2100;
+    const canvasWidth = quality === "fast" ? 1200 : quality === "balanced" ? 1600 : 2100;
+    const useJpeg = quality === "fast" || quality === "balanced";
     const renderOptions = {
       canvasWidth,
       canvasHeight: Math.round(canvasWidth * 99 / 210),
       pixelRatio: 1,
-      cacheBust: !optimizedForOlderIphone,
+      cacheBust: !quality,
       style: { borderRadius: "0px" },
     };
-    return optimizedForOlderIphone
-      ? toJpeg(canvas, { ...renderOptions, quality: 0.92 })
+    return useJpeg
+      ? toJpeg(canvas, { ...renderOptions, quality: quality === "fast" ? 0.88 : 0.93 })
       : toPng(canvas, renderOptions);
   }
 
@@ -316,6 +331,7 @@ export default function Home() {
   }
 
   function shouldUseConstrainedIphoneExport() {
+    if (typeof navigator === "undefined") return false;
     if (!/iPhone|iPod/.test(navigator.userAgent)) return false;
     const iosMajorVersion = Number(navigator.userAgent.match(/OS (\d+)_/)?.[1] ?? 0);
     return (iosMajorVersion > 0 && iosMajorVersion <= 16)
@@ -323,14 +339,13 @@ export default function Home() {
       || window.screen.width <= 375;
   }
 
-  async function createMobileGiftSizePdf(onPageReady: (page: number) => void) {
+  async function createMobileGiftSizePdf(quality: ExportQuality, onProgress: (percent: number) => void) {
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99], compress: true });
-    const useConstrainedExport = shouldUseConstrainedIphoneExport();
     for (const index of [0, 1]) {
-      const image = await renderPage(index, useConstrainedExport);
+      const image = await renderPage(index, quality);
       if (index > 0) pdf.addPage([210, 99], "landscape");
       pdf.addImage(image, image.startsWith("data:image/jpeg") ? "JPEG" : "PNG", 0, 0, 210, 99, undefined, "FAST");
-      onPageReady(index + 1);
+      onProgress(index === 0 ? 45 : 85);
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
     }
     return {
@@ -610,6 +625,46 @@ export default function Home() {
           </div>
           <Badge variant="secondary">2 pages</Badge>
         </div>
+        <div className="voucher-print-chrome grid gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-950/70 sm:hidden">
+          <div className="flex items-end justify-between gap-4">
+            <Field className="flex-1 gap-1.5">
+              <FieldLabel htmlFor="export-quality">Export quality</FieldLabel>
+              <Select
+                value={exportQuality}
+                disabled={exporting !== null}
+                onValueChange={(value) => {
+                  if (!value) return;
+                  setMobileShareFile(null);
+                  setPreparationProgress(0);
+                  setPreparationRequested(false);
+                  setExportQuality(value as ExportQuality);
+                }}
+              >
+                <SelectTrigger id="export-quality" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fast">Fast</SelectItem>
+                  <SelectItem value="balanced">Balanced</SelectItem>
+                  <SelectItem value="high">High quality</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <div className="pb-1 text-right">
+              <p className="font-secondary text-[10px] font-semibold tracking-[.12em] text-zinc-500 uppercase">Estimated time</p>
+              <p className="mt-1 font-secondary text-sm font-semibold">{exportTimeEstimate}</p>
+            </div>
+          </div>
+          {preparationRequested && !mobileShareFile && (
+            <div aria-live="polite">
+              <div className="mb-1.5 flex items-center justify-between font-secondary text-xs">
+                <span>Preparing voucher</span>
+                <span className="font-semibold tabular-nums">{preparationProgress}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                <div className="h-full rounded-full bg-zinc-950 transition-[width] duration-500 dark:bg-zinc-50" style={{ width: `${preparationProgress}%` }} />
+              </div>
+            </div>
+          )}
+        </div>
         <div className="voucher-print-pages grid gap-6 sm:gap-8 lg:gap-10">
         {pages.map((page, index) => (
           <article key={page} tabIndex={0} aria-label={`${page} voucher preview. Scroll horizontally on smaller screens.`} className="voucher-print-page mx-0 overflow-x-auto px-0 pb-3 outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6 xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0">
@@ -701,7 +756,12 @@ export default function Home() {
         </div>
         <div className="voucher-print-chrome sticky bottom-0 -mx-4 -mb-4 grid grid-cols-[auto_1fr] gap-2.5 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
-          <Button onClick={shareGiftSizePdf} disabled={!mobileShareFile}>{mobileShareFile ? "Share gift voucher" : `Preparing ${preparationProgress + 1} of 2…`}</Button>
+          <Button
+            onClick={mobileShareFile ? shareGiftSizePdf : () => setPreparationRequested(true)}
+            disabled={preparationRequested && !mobileShareFile}
+          >
+            {mobileShareFile ? "Share gift voucher" : preparationRequested ? `Preparing ${preparationProgress}%…` : "Prepare gift voucher"}
+          </Button>
         </div>
       </section>
       </div>
