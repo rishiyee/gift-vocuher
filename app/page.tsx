@@ -12,7 +12,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, isValid, parse } from "date-fns";
-import { toPng } from "html-to-image";
+import { toJpeg } from "html-to-image";
 import { jsPDF } from "jspdf";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
@@ -167,7 +167,7 @@ export default function Home() {
       image.addEventListener("load", () => resolve(), { once: true });
       image.addEventListener("error", () => resolve(), { once: true });
     })));
-    return toPng(canvas, { canvasWidth: 2100, canvasHeight: 990, pixelRatio: 1, cacheBust: true, style: { border: "none", borderRadius: "0px" } });
+    return toJpeg(canvas, { canvasWidth: 2100, canvasHeight: 990, pixelRatio: 1, quality: 0.92, cacheBust: false, style: { border: "none", borderRadius: "0px" } });
   }
 
   async function preparePreview(indices: number[]) {
@@ -209,7 +209,7 @@ export default function Home() {
     const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [2100, 990], hotfixes: ["px_scaling"] });
     preview.images.forEach((image, imageIndex) => {
       if (imageIndex > 0) pdf.addPage([2100, 990], "landscape");
-      pdf.addImage(image, "PNG", 0, 0, 2100, 990, undefined, "FAST");
+      pdf.addImage(image, "JPEG", 0, 0, 2100, 990, undefined, "FAST");
     });
     const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
     const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
@@ -220,6 +220,7 @@ export default function Home() {
     const form = document.createElement("form");
     form.method = "POST";
     form.action = "/api/download-pdf";
+    form.enctype = "multipart/form-data";
     form.style.display = "none";
 
     const pdfField = document.createElement("input");
