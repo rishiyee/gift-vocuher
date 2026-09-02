@@ -12,6 +12,77 @@
 @font-face { font-family: "Canela Trial"; src: url("/fonts/CANELA-BLACK-TRIAL.OTF") format("opentype"); font-style: normal; font-weight: 900; font-display: swap; }
 @font-face { font-family: "Figtree"; src: url("/fonts/Figtree-Variable.ttf") format("truetype"); font-style: normal; font-weight: 300 900; font-display: swap; }
 
+@media print {
+  @page {
+    size: 210mm 99mm;
+    margin: 0;
+  }
+
+  html,
+  body {
+    width: 210mm;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .voucher-print-area,
+  .voucher-print-area * {
+    visibility: visible;
+  }
+
+  .voucher-print-area {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    display: block !important;
+    width: 210mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .voucher-print-chrome {
+    display: none !important;
+  }
+
+  .voucher-print-pages {
+    display: block !important;
+  }
+
+  .voucher-print-page {
+    width: 210mm !important;
+    height: 99mm !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .voucher-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .voucher-canvas {
+    width: 210mm !important;
+    height: 99mm !important;
+    min-width: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
 @theme inline {
   --font-primary: "Canela Trial", Georgia, serif;
   --font-secondary: "Figtree", Arial, sans-serif;

@@ -207,8 +207,7 @@ export default function Home() {
     });
   }
 
-  async function preparePreview(indices: number[]) {
-    setDownloadNotice("");
+  function validateVoucher() {
     const requiredFields: Array<[string, string]> = [
       [content.frontTitle, "front title"], [content.message, "message"],
       [content.backTitle, "voucher title"], [content.villaType, "villa type"], [content.guestName, "guest name"],
@@ -223,9 +222,35 @@ export default function Home() {
       const inclusionMessage = !inclusionsVerified ? " Verify the inclusion selection." : "";
       setExportError(`${fieldMessage}${inclusionMessage}`.trim());
       if ("vibrate" in navigator) navigator.vibrate(80);
-      return;
+      return false;
     }
     setExportError("");
+    return true;
+  }
+
+  async function printVoucher() {
+    setDownloadNotice("");
+    if (!validateVoucher()) return;
+    setExporting("all");
+    try {
+      await document.fonts.ready;
+      await Promise.all(Array.from(document.querySelectorAll<HTMLImageElement>(".voucher-print-area img")).map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => {
+        image.addEventListener("load", () => resolve(), { once: true });
+        image.addEventListener("error", () => resolve(), { once: true });
+      })));
+      window.print();
+      setDownloadNotice("Print view opened. On iPhone or iPad, expand the preview and use Share to save the PDF.");
+    } catch (error) {
+      console.error("Voucher print preparation failed.", error);
+      setExportError("The high-quality print view could not be opened. Use the standard PDF download instead.");
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  async function preparePreview(indices: number[]) {
+    setDownloadNotice("");
+    if (!validateVoucher()) return;
     const exportTarget = indices.length === 2 ? "all" : indices[0];
     setExporting(exportTarget);
     try {
@@ -334,6 +359,7 @@ export default function Home() {
               <DropdownMenuItem onClick={() => preparePreview([0])}>Front page</DropdownMenuItem>
               <DropdownMenuItem onClick={() => preparePreview([1])}>Back page</DropdownMenuItem>
               <DropdownMenuItem onClick={() => preparePreview([0, 1])}>Front &amp; back</DropdownMenuItem>
+              <DropdownMenuItem onClick={printVoucher}>High-quality print / PDF</DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -485,18 +511,18 @@ export default function Home() {
         </div>
       </section>
 
-      <section className={`${mobileStep === 3 ? "grid" : "hidden"} min-w-0 gap-4 bg-transparent p-0 sm:grid sm:rounded-2xl sm:bg-zinc-100/70 sm:p-5 sm:dark:bg-zinc-900/70 lg:p-6`} aria-label="Voucher pages">
-        <div className="flex items-center justify-between gap-4">
+      <section className={`${mobileStep === 3 ? "grid" : "hidden"} voucher-print-area min-w-0 gap-4 rounded-2xl border border-zinc-200/70 bg-white p-4 shadow-[0_8px_28px_rgba(0,0,0,.05)] dark:border-zinc-800 dark:bg-zinc-900 sm:grid sm:border-0 sm:bg-zinc-100/70 sm:p-5 sm:shadow-none sm:dark:bg-zinc-900/70 lg:p-6`} aria-label="Voucher pages">
+        <div className="voucher-print-chrome flex items-center justify-between gap-4">
           <div>
             <h2 className="font-secondary text-sm font-semibold text-zinc-900 dark:text-zinc-100">Canvas preview</h2>
             <p className="mt-0.5 font-secondary text-xs text-zinc-500 dark:text-zinc-400 xl:hidden">Swipe horizontally to inspect the full voucher.</p>
           </div>
           <Badge variant="secondary">2 pages</Badge>
         </div>
-        <div className="grid gap-6 sm:gap-8 lg:gap-10">
+        <div className="voucher-print-pages grid gap-6 sm:gap-8 lg:gap-10">
         {pages.map((page, index) => (
-          <article key={page} tabIndex={0} aria-label={`${page} voucher preview. Scroll horizontally on smaller screens.`} className="mx-0 overflow-x-auto px-0 pb-3 outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6 xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0">
-            <div ref={(node) => { canvasRefs.current[index] = node; }} className="group relative aspect-[2100/990] w-full min-w-[840px] overflow-hidden rounded-[9px] bg-[linear-gradient(115deg,#141d1c_0%,#141f1e_50%,#121c1a_75%,#142421_100%)] shadow-[0_2px_3px_rgba(16,28,25,.1),0_14px_32px_rgba(16,28,25,.14)] [container-type:inline-size] after:pointer-events-none after:absolute after:inset-0 after:bg-[radial-gradient(circle_at_50%_40%,transparent_20%,rgba(3,10,8,.18)_100%)] after:content-[''] xl:min-w-0 xl:rounded-[clamp(10px,1.5vw,20px)] xl:shadow-[0_2px_4px_rgba(16,28,25,.12),0_24px_60px_rgba(16,28,25,.16)]">
+          <article key={page} tabIndex={0} aria-label={`${page} voucher preview. Scroll horizontally on smaller screens.`} className="voucher-print-page mx-0 overflow-x-auto px-0 pb-3 outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6 xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0">
+            <div ref={(node) => { canvasRefs.current[index] = node; }} className="voucher-canvas group relative aspect-[2100/990] w-full min-w-[840px] overflow-hidden rounded-[9px] bg-[linear-gradient(115deg,#141d1c_0%,#141f1e_50%,#121c1a_75%,#142421_100%)] shadow-[0_2px_3px_rgba(16,28,25,.1),0_14px_32px_rgba(16,28,25,.14)] [container-type:inline-size] after:pointer-events-none after:absolute after:inset-0 after:bg-[radial-gradient(circle_at_50%_40%,transparent_20%,rgba(3,10,8,.18)_100%)] after:content-[''] xl:min-w-0 xl:rounded-[clamp(10px,1.5vw,20px)] xl:shadow-[0_2px_4px_rgba(16,28,25,.12),0_24px_60px_rgba(16,28,25,.16)]">
               <Image className="absolute top-[-24.04%] left-[67.667%] z-10 h-[90.202%] w-[48.619%] origin-center rotate-150 object-contain" src="/spiral.svg" alt="" width={1021} height={893} priority={index === 0} />
               <Image className="absolute top-1/2 left-1/2 z-10 h-[90.202%] w-[48.619%] -translate-x-1/2 -translate-y-1/2 object-contain" src="/spiral.svg" alt="" width={1021} height={893} />
               <Image className="absolute top-[10.101%] left-[30.952%] z-20 h-[8.081%] w-[3.81%]" src="/dot.svg" alt="" width={80} height={80} />
@@ -584,7 +610,7 @@ export default function Home() {
         </div>
         <div className="voucher-print-chrome sticky bottom-0 -mx-4 -mb-4 grid grid-cols-[auto_1fr] gap-2.5 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
-          <Button onClick={() => preparePreview([0, 1])} disabled={exporting !== null}>{exporting !== null ? "Preparing…" : "Review & save PDF"}</Button>
+          <Button onClick={printVoucher} disabled={exporting !== null}>{exporting !== null ? "Preparing…" : "Print / save PDF"}</Button>
         </div>
       </section>
       </div>
