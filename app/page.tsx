@@ -125,6 +125,7 @@ export default function Home() {
   const [isSavingPdf, setIsSavingPdf] = useState(false);
   const [mobileStep, setMobileStep] = useState(0);
   const [editorSections, setEditorSections] = useState<string[]>(["front"]);
+  const [mobileShareFile, setMobileShareFile] = useState<File | null>(null);
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [content.candlelightDinner && "a candlelight dinner", content.flowerBed && "a flower bed"].filter(Boolean);
@@ -154,6 +155,7 @@ export default function Home() {
       }
     }
     const boundedStep = Math.max(0, Math.min(mobileSteps.length - 1, nextStep));
+    setMobileShareFile(null);
     setMobileStep(boundedStep);
     setEditorSections(boundedStep === 0 ? ["front"] : boundedStep < 3 ? ["back"] : []);
     setExportError("");
@@ -168,6 +170,28 @@ export default function Home() {
     document.documentElement.classList.toggle("dark", isDark);
     window.localStorage.setItem("gift-voucher-theme", isDark ? "dark" : "light");
   }, [isDark]);
+
+  useEffect(() => {
+    if (mobileStep !== 3) return;
+    let cancelled = false;
+    void (async () => {
+      await Promise.resolve();
+      if (!cancelled) setExporting("all");
+      try {
+        const images = [await renderPage(0), await renderPage(1)];
+        const { blob, fileName } = createGiftSizePdf(images, [0, 1]);
+        if (!cancelled) setMobileShareFile(new File([blob], fileName, { type: "application/pdf" }));
+      } catch (error) {
+        console.error("Gift voucher preparation failed.", error);
+        if (!cancelled) setExportError("The gift voucher could not be prepared. Please go back and try again.");
+      } finally {
+        if (!cancelled) setExporting(null);
+      }
+    })();
+    return () => { cancelled = true; };
+    // The PDF is prepared once when the final mobile step becomes visible.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mobileStep]);
 
   function unlockApp(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -266,32 +290,65 @@ export default function Home() {
     }
   }
 
+  function createGiftSizePdf(images: string[], indices: number[]) {
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99] });
+    images.forEach((image, imageIndex) => {
+      if (imageIndex > 0) pdf.addPage([210, 99], "landscape");
+      pdf.addImage(image, "PNG", 0, 0, 210, 99, undefined, "FAST");
+    });
+    const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
+    const pageSuffix = indices.length === 2 ? " - Front and Back" : indices[0] === 0 ? " - Front" : " - Back";
+    const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
+    return {
+      blob: pdf.output("blob"),
+      fileName: `${guestFileName}${pageSuffix} - ${generatedAt}.pdf`,
+    };
+  }
+
+  function downloadPdfBlob(blob: Blob, fileName: string) {
+    const objectUrl = URL.createObjectURL(blob);
+    const downloadLink = document.createElement("a");
+    downloadLink.href = objectUrl;
+    downloadLink.download = fileName;
+    downloadLink.rel = "noopener";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  }
+
+  async function shareGiftSizePdf() {
+    setDownloadNotice("");
+    if (!mobileShareFile) return;
+    try {
+      const canShareFile = typeof navigator.share === "function"
+        && typeof navigator.canShare === "function"
+        && navigator.canShare({ files: [mobileShareFile] });
+      if (canShareFile) {
+        await navigator.share({ files: [mobileShareFile], title: "Gift voucher" });
+        setDownloadNotice("Gift voucher shared successfully.");
+      } else {
+        downloadPdfBlob(mobileShareFile, mobileShareFile.name);
+        setDownloadNotice("Sharing is unavailable, so the gift voucher was downloaded instead.");
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setDownloadNotice("Sharing cancelled.");
+        return;
+      }
+      console.error("Gift voucher sharing failed.", error);
+      setExportError("The gift voucher could not be shared. Please try again.");
+    }
+  }
+
   async function savePreviewAsPdf() {
     if (!preview) return;
     try {
       setExportError("");
       setDownloadNotice("");
       setIsSavingPdf(true);
-      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99] });
-      preview.images.forEach((image, imageIndex) => {
-        if (imageIndex > 0) pdf.addPage([210, 99], "landscape");
-        pdf.addImage(image, "PNG", 0, 0, 210, 99, undefined, "FAST");
-      });
-      const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
-      const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
-      const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
-      const fileName = `${guestFileName}${pageSuffix} - ${generatedAt}.pdf`;
-
-      const pdfBlob = pdf.output("blob");
-      const objectUrl = URL.createObjectURL(pdfBlob);
-      const downloadLink = document.createElement("a");
-      downloadLink.href = objectUrl;
-      downloadLink.download = fileName;
-      downloadLink.rel = "noopener";
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      downloadLink.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      const { blob, fileName } = createGiftSizePdf(preview.images, preview.indices);
+      downloadPdfBlob(blob, fileName);
       setDownloadNotice("PDF download requested. Check your browser downloads if it does not appear immediately.");
       setPreview(null);
     } catch (error) {
@@ -610,7 +667,7 @@ export default function Home() {
         </div>
         <div className="voucher-print-chrome sticky bottom-0 -mx-4 -mb-4 grid grid-cols-[auto_1fr] gap-2.5 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
-          <Button onClick={() => preparePreview([0, 1])} disabled={exporting !== null}>{exporting !== null ? "Preparing…" : "Create gift-size PDF"}</Button>
+          <Button onClick={shareGiftSizePdf} disabled={!mobileShareFile}>{mobileShareFile ? "Share gift voucher" : "Preparing…"}</Button>
         </div>
       </section>
       </div>
