@@ -316,8 +316,8 @@ export default function Home() {
   }
 
   return (
-    <main className="w-full px-0 pb-20 sm:px-[clamp(16px,3vw,48px)]">
-      <header className="sticky top-0 z-40 mx-0 flex items-center justify-between gap-4 border-b border-zinc-200/80 bg-white/90 px-4 py-4 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/90 sm:-mx-[clamp(16px,3vw,48px)] sm:px-[clamp(16px,3vw,48px)]">
+    <main className="min-h-dvh w-full bg-zinc-50/70 px-0 pb-8 dark:bg-zinc-950 sm:bg-transparent sm:px-[clamp(16px,3vw,48px)] sm:pb-20 sm:dark:bg-transparent">
+      <header className="sticky top-0 z-40 mx-0 flex items-center justify-between gap-4 border-b border-zinc-200/80 bg-white/90 px-4 py-3.5 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/90 sm:-mx-[clamp(16px,3vw,48px)] sm:px-[clamp(16px,3vw,48px)] sm:py-4">
         <div>
           <p className="font-secondary text-[10px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Voucher studio</p>
           <h1 className="font-secondary text-lg font-semibold tracking-[-.02em] sm:text-xl">Gift voucher</h1>
@@ -339,36 +339,36 @@ export default function Home() {
         </DropdownMenu>
         </div>
       </header>
-      {exportError && <div role="alert" className="mx-4 mt-4 bg-destructive/10 px-4 py-3 font-secondary text-sm text-destructive sm:mx-0">{exportError}</div>}
-      {downloadNotice && <div role="status" className="mx-4 mt-4 bg-emerald-500/10 px-4 py-3 font-secondary text-sm text-emerald-700 dark:text-emerald-400 sm:mx-0">{downloadNotice}</div>}
+      {exportError && <div role="alert" className="mx-4 mt-3 rounded-xl bg-destructive/10 px-4 py-3 font-secondary text-sm leading-5 text-destructive sm:mx-0 sm:mt-4 sm:rounded-none">{exportError}</div>}
+      {downloadNotice && <div role="status" className="mx-4 mt-3 rounded-xl bg-emerald-500/10 px-4 py-3 font-secondary text-sm leading-5 text-emerald-700 dark:text-emerald-400 sm:mx-0 sm:mt-4 sm:rounded-none">{downloadNotice}</div>}
 
-      <nav className="px-4 pt-5 sm:hidden" aria-label="Voucher creation progress">
-        <div className="mb-2 flex items-center justify-between">
+      <nav className="px-4 pt-4 sm:hidden" aria-label="Voucher creation progress">
+        <div className="mb-2.5 flex items-center justify-between">
           <p className="font-secondary text-xs font-semibold">Step {mobileStep + 1} of {mobileSteps.length}</p>
           <p className="font-secondary text-xs text-zinc-500">{mobileSteps[mobileStep]}</p>
         </div>
         <div className="grid grid-cols-4 gap-1" aria-hidden="true">
-          {mobileSteps.map((step, index) => <span key={step} className={`h-1 rounded-full ${index <= mobileStep ? "bg-zinc-950 dark:bg-zinc-50" : "bg-zinc-200 dark:bg-zinc-800"}`} />)}
+          {mobileSteps.map((step, index) => <span key={step} className={`h-1.5 rounded-full ${index <= mobileStep ? "bg-zinc-950 dark:bg-zinc-50" : "bg-zinc-200 dark:bg-zinc-800"}`} />)}
         </div>
       </nav>
 
-      <div className="mt-0 grid items-start gap-5 sm:mt-5 lg:mt-8 xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-8">
-      <section className={`${mobileStep === 3 ? "hidden" : "block"} self-start overflow-hidden bg-white font-secondary dark:bg-zinc-900 sm:block sm:rounded-2xl sm:shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] xl:sticky xl:top-24`} aria-labelledby="editor-title">
-        <div className="px-5 py-5 sm:px-6 sm:py-6">
-          <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mt-4 grid items-start gap-4 px-4 sm:mt-5 sm:gap-5 sm:px-0 lg:mt-8 xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-8">
+      <section className={`${mobileStep === 3 ? "hidden" : "block"} self-start overflow-hidden rounded-2xl border border-zinc-200/70 bg-white font-secondary shadow-[0_8px_28px_rgba(0,0,0,.05)] dark:border-zinc-800 dark:bg-zinc-900 sm:block sm:border-0 sm:shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] xl:sticky xl:top-24`} aria-labelledby="editor-title">
+        <div className="px-4 py-4 sm:px-6 sm:py-6">
+          <div className="mb-2.5 flex items-center justify-between gap-3 sm:mb-3">
             <p className="font-secondary text-[11px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Live editor</p>
             <Badge variant="outline"><span className="mr-1.5 size-1.5 rounded-full bg-emerald-500" />Live preview</Badge>
           </div>
           <h2 id="editor-title" className="font-secondary text-xl font-semibold tracking-[-.02em] text-zinc-950 dark:text-zinc-50 sm:text-2xl"><span className="sm:hidden">{mobileSteps[mobileStep]}</span><span className="hidden sm:inline">Customize your voucher</span></h2>
-          <p className="mt-2 font-secondary text-sm leading-5 text-zinc-500 dark:text-zinc-400"><span className="sm:hidden">Complete this step, then continue to build your voucher.</span><span className="hidden sm:inline">Update the recipient and stay details. Every change appears on the canvas instantly.</span></p>
+          <p className="mt-1.5 font-secondary text-sm leading-5 text-zinc-500 dark:text-zinc-400 sm:mt-2"><span className="sm:hidden">Complete this step, then continue to build your voucher.</span><span className="hidden sm:inline">Update the recipient and stay details. Every change appears on the canvas instantly.</span></p>
         </div>
-        <div className="bg-zinc-50/70 px-4 pb-4 dark:bg-zinc-950/60 sm:px-5 sm:pb-5">
+        <div className="bg-zinc-50/70 px-3 pb-3 pt-px dark:bg-zinc-950/60 sm:px-5 sm:pb-5 sm:pt-0">
         <Accordion value={editorSections} onValueChange={setEditorSections}>
-          <div className={`${mobileStep === 0 ? "block" : "hidden"} mt-4 bg-white px-3 dark:bg-zinc-900 sm:block sm:rounded-xl sm:shadow-xs sm:transition-shadow sm:hover:shadow-sm`}>
+          <div className={`${mobileStep === 0 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 shadow-xs dark:bg-zinc-900 sm:mt-4 sm:block sm:px-3 sm:transition-shadow sm:hover:shadow-sm`}>
           <AccordionItem value="front">
             <AccordionTrigger className="hover:no-underline">Front page</AccordionTrigger>
             <AccordionContent>
-              <div className="px-1 pt-3">
+              <div className="pt-2 sm:px-1 sm:pt-3">
               <FieldSet>
                 <FieldLegend>Voucher copy</FieldLegend>
                 <EditorField id="front-title" label="Title" value={content.frontTitle} multiline disabled onChange={update("frontTitle")} />
@@ -391,11 +391,11 @@ export default function Home() {
           </AccordionItem>
           </div>
 
-          <div className={`${mobileStep === 1 || mobileStep === 2 ? "block" : "hidden"} mt-3 bg-white px-3 dark:bg-zinc-900 sm:block sm:rounded-xl sm:shadow-xs sm:transition-shadow sm:hover:shadow-sm`}>
+          <div className={`${mobileStep === 1 || mobileStep === 2 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 shadow-xs dark:bg-zinc-900 sm:block sm:px-3 sm:transition-shadow sm:hover:shadow-sm`}>
           <AccordionItem value="back">
             <AccordionTrigger className="hover:no-underline">Back page</AccordionTrigger>
             <AccordionContent>
-            <div className="grid gap-7 px-1 pt-3">
+            <div className="grid gap-6 pt-2 sm:gap-7 sm:px-1 sm:pt-3">
               <FieldSet className={mobileStep === 1 ? "flex" : "hidden sm:flex"}>
               <FieldLegend>Voucher &amp; inclusions</FieldLegend>
               <EditorField id="back-title" label="Voucher title" value={content.backTitle} disabled onChange={update("backTitle")} />
@@ -478,7 +478,7 @@ export default function Home() {
           </AccordionItem>
           </div>
         </Accordion>
-        <div className="sticky bottom-0 mt-4 flex gap-3 border-t border-zinc-200 bg-zinc-50/95 pt-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
+        <div className="sticky bottom-0 mt-3 flex gap-2.5 border-t border-zinc-200 bg-zinc-50/95 pt-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
           <Button variant="outline" className="flex-1" onClick={() => changeMobileStep(mobileStep - 1)} disabled={mobileStep === 0}>Back</Button>
           <Button className="flex-1" onClick={() => changeMobileStep(mobileStep + 1)}>Continue</Button>
         </div>
@@ -582,7 +582,7 @@ export default function Home() {
           </article>
         ))}
         </div>
-        <div className="sticky bottom-0 grid grid-cols-[auto_1fr] gap-3 border-t border-zinc-200 bg-white/95 px-4 py-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
+        <div className="voucher-print-chrome sticky bottom-0 -mx-4 -mb-4 grid grid-cols-[auto_1fr] gap-2.5 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
           <Button onClick={() => preparePreview([0, 1])} disabled={exporting !== null}>{exporting !== null ? "Preparing…" : "Review & save PDF"}</Button>
         </div>
@@ -590,7 +590,7 @@ export default function Home() {
       </div>
 
       <Dialog open={preview !== null} onOpenChange={(open) => !open && setPreview(null)}>
-        <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] max-w-none overflow-y-auto p-3 sm:w-[calc(100%-2rem)] sm:max-w-none sm:p-5 lg:w-[min(1200px,calc(100%-3rem))]">
+        <DialogContent className="max-h-[92dvh] w-[calc(100%-2rem)] max-w-none overflow-y-auto p-4 sm:max-w-none sm:p-5 lg:w-[min(1200px,calc(100%-3rem))]">
           <DialogHeader>
             <DialogTitle>PDF preview</DialogTitle>
             <DialogDescription>Review the selected voucher pages before downloading.</DialogDescription>
