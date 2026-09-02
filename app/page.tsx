@@ -695,7 +695,7 @@ export default function Home() {
                 <div className="absolute inset-x-[7.619%] top-[11.5%] bottom-[9%] z-20 flex flex-col text-[#beb16b]">
                   <div className="flex items-end justify-between">
                     <div>
-                      <p className="mb-[.7cqw] font-secondary text-[.62cqw] font-light tracking-[.24em]">CHEMBARATHI · WAYANAD</p>
+                      <p className="mb-[.3cqw] font-secondary text-[.62cqw] leading-none font-light tracking-[.24em]">CHEMBARATHI · WAYANAD</p>
                       <h3 className="m-0 font-primary text-[5.15cqw] leading-[.82] font-light tracking-[-.035em]">{content.backTitle}</h3>
                     </div>
                     <p className="ml-auto pb-[.3cqw] text-right font-secondary text-[.84cqw] font-medium tracking-[.1em] whitespace-nowrap">{content.villaType}</p>
