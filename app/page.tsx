@@ -122,12 +122,43 @@ export default function Home() {
   const [inclusionsVerified, setInclusionsVerified] = useState(false);
   const [exportError, setExportError] = useState("");
   const [downloadNotice, setDownloadNotice] = useState("");
+  const [isSavingPdf, setIsSavingPdf] = useState(false);
+  const [mobileStep, setMobileStep] = useState(0);
+  const [editorSections, setEditorSections] = useState<string[]>(["front"]);
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [content.candlelightDinner && "a candlelight dinner", content.flowerBed && "a flower bed"].filter(Boolean);
   const inclusionText = selectedInclusions.length ? `Includes ${selectedInclusions.join(" and ")}.` : "";
   const displayMessage = content.message.trim();
   const messageState = !content.message.trim() ? "Empty" : content.message === DEFAULT_MESSAGE ? "Autofilled" : "Custom";
+  const mobileSteps = ["Message", "Voucher", "Stay", "Review"];
+
+  function changeMobileStep(nextStep: number) {
+    if (nextStep > mobileStep) {
+      if (mobileStep === 0 && !content.message.trim()) {
+        setExportError("Add or autofill the gift message to continue.");
+        return;
+      }
+      if (mobileStep === 1 && (!content.villaType.trim() || !inclusionsVerified)) {
+        setExportError("Choose the villa and verify the inclusion selection to continue.");
+        return;
+      }
+      if (mobileStep === 2) {
+        const scheduleComplete = content.voucherType === "dated"
+          ? Boolean(content.checkInDate.trim() && content.checkInTime.trim() && content.checkOutDate.trim() && content.checkOutTime.trim())
+          : Boolean(content.redeemDate.trim());
+        if (!content.guestName.trim() || !scheduleComplete) {
+          setExportError("Enter the guest name and complete the voucher schedule to continue.");
+          return;
+        }
+      }
+    }
+    const boundedStep = Math.max(0, Math.min(mobileSteps.length - 1, nextStep));
+    setMobileStep(boundedStep);
+    setEditorSections(boundedStep === 0 ? ["front"] : boundedStep < 3 ? ["back"] : []);
+    setExportError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   useEffect(() => {
     window.localStorage.setItem(VOUCHER_STORAGE_KEY, JSON.stringify(content));
@@ -167,7 +198,14 @@ export default function Home() {
       image.addEventListener("load", () => resolve(), { once: true });
       image.addEventListener("error", () => resolve(), { once: true });
     })));
-    return toPng(canvas, { canvasWidth: 2100, canvasHeight: 990, pixelRatio: 1, cacheBust: true, style: { borderRadius: "0px" } });
+    const isMobile = window.matchMedia("(max-width: 767px), (pointer: coarse)").matches;
+    return toPng(canvas, {
+      canvasWidth: isMobile ? 1680 : 2100,
+      canvasHeight: isMobile ? 792 : 990,
+      pixelRatio: 1,
+      cacheBust: true,
+      style: { borderRadius: "0px" },
+    });
   }
 
   async function preparePreview(indices: number[]) {
@@ -204,10 +242,12 @@ export default function Home() {
     }
   }
 
-  function savePreviewAsPdf() {
+  async function savePreviewAsPdf() {
     if (!preview) return;
     try {
       setExportError("");
+      setDownloadNotice("");
+      setIsSavingPdf(true);
       const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [2100, 990], hotfixes: ["px_scaling"] });
       preview.images.forEach((image, imageIndex) => {
         if (imageIndex > 0) pdf.addPage([2100, 990], "landscape");
@@ -217,12 +257,40 @@ export default function Home() {
       const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
       const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
       const fileName = `${guestFileName}${pageSuffix} - ${generatedAt}.pdf`;
-      pdf.save(fileName);
+
+      const pdfBlob = pdf.output("blob");
+      const pdfFile = new File([pdfBlob], fileName, { type: "application/pdf" });
+      const isAppleMobile = /iPad|iPhone|iPod/.test(navigator.userAgent)
+        || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const canShareFile = typeof navigator.share === "function"
+        && typeof navigator.canShare === "function"
+        && navigator.canShare({ files: [pdfFile] });
+
+      if (isAppleMobile && canShareFile) {
+        await navigator.share({ files: [pdfFile], title: fileName });
+        setDownloadNotice("PDF is ready. Choose Save to Files in the share sheet to keep it on your device.");
+      } else {
+        const objectUrl = URL.createObjectURL(pdfBlob);
+        const downloadLink = document.createElement("a");
+        downloadLink.href = objectUrl;
+        downloadLink.download = fileName;
+        downloadLink.rel = "noopener";
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        downloadLink.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+        setDownloadNotice("PDF download requested. Check your browser downloads if it does not appear immediately.");
+      }
       setPreview(null);
-      setDownloadNotice("PDF download started.");
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setDownloadNotice("Save cancelled. Your PDF preview is still open.");
+        return;
+      }
       console.error("PDF download failed.", error);
-      setExportError("The PDF could not be downloaded. Please try one page at a time.");
+      setExportError("The PDF could not be saved. Try one page at a time, or use Safari's Share menu and choose Save to Files.");
+    } finally {
+      setIsSavingPdf(false);
     }
   }
 
@@ -276,7 +344,7 @@ export default function Home() {
           {isDark ? <Sun /> : <Moon />}
         </Button>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button disabled={exporting !== null} />}>{exporting !== null ? "Preparing PDF..." : "Download PDF"}</DropdownMenuTrigger>
+          <DropdownMenuTrigger render={<Button className="hidden sm:inline-flex" disabled={exporting !== null} />}>{exporting !== null ? "Preparing PDF..." : "Download PDF"}</DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuGroup>
               <DropdownMenuLabel>Choose pages</DropdownMenuLabel>
@@ -291,19 +359,29 @@ export default function Home() {
       {exportError && <div role="alert" className="mx-4 mt-4 bg-destructive/10 px-4 py-3 font-secondary text-sm text-destructive sm:mx-0">{exportError}</div>}
       {downloadNotice && <div role="status" className="mx-4 mt-4 bg-emerald-500/10 px-4 py-3 font-secondary text-sm text-emerald-700 dark:text-emerald-400 sm:mx-0">{downloadNotice}</div>}
 
+      <nav className="px-4 pt-5 sm:hidden" aria-label="Voucher creation progress">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="font-secondary text-xs font-semibold">Step {mobileStep + 1} of {mobileSteps.length}</p>
+          <p className="font-secondary text-xs text-zinc-500">{mobileSteps[mobileStep]}</p>
+        </div>
+        <div className="grid grid-cols-4 gap-1" aria-hidden="true">
+          {mobileSteps.map((step, index) => <span key={step} className={`h-1 rounded-full ${index <= mobileStep ? "bg-zinc-950 dark:bg-zinc-50" : "bg-zinc-200 dark:bg-zinc-800"}`} />)}
+        </div>
+      </nav>
+
       <div className="mt-0 grid items-start gap-5 sm:mt-5 lg:mt-8 xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-8">
-      <section className="self-start overflow-hidden bg-white font-secondary dark:bg-zinc-900 sm:rounded-2xl sm:shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] xl:sticky xl:top-24" aria-labelledby="editor-title">
+      <section className={`${mobileStep === 3 ? "hidden" : "block"} self-start overflow-hidden bg-white font-secondary dark:bg-zinc-900 sm:block sm:rounded-2xl sm:shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] xl:sticky xl:top-24`} aria-labelledby="editor-title">
         <div className="px-5 py-5 sm:px-6 sm:py-6">
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="font-secondary text-[11px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Live editor</p>
             <Badge variant="outline"><span className="mr-1.5 size-1.5 rounded-full bg-emerald-500" />Live preview</Badge>
           </div>
-          <h2 id="editor-title" className="font-secondary text-xl font-semibold tracking-[-.02em] text-zinc-950 dark:text-zinc-50 sm:text-2xl">Customize your voucher</h2>
-          <p className="mt-2 font-secondary text-sm leading-5 text-zinc-500 dark:text-zinc-400">Update the recipient and stay details. Every change appears on the canvas instantly.</p>
+          <h2 id="editor-title" className="font-secondary text-xl font-semibold tracking-[-.02em] text-zinc-950 dark:text-zinc-50 sm:text-2xl"><span className="sm:hidden">{mobileSteps[mobileStep]}</span><span className="hidden sm:inline">Customize your voucher</span></h2>
+          <p className="mt-2 font-secondary text-sm leading-5 text-zinc-500 dark:text-zinc-400"><span className="sm:hidden">Complete this step, then continue to build your voucher.</span><span className="hidden sm:inline">Update the recipient and stay details. Every change appears on the canvas instantly.</span></p>
         </div>
         <div className="bg-zinc-50/70 px-4 pb-4 dark:bg-zinc-950/60 sm:px-5 sm:pb-5">
-        <Accordion defaultValue={["front"]}>
-          <div className="mt-4 bg-white px-3 dark:bg-zinc-900 sm:rounded-xl sm:shadow-xs sm:transition-shadow sm:hover:shadow-sm">
+        <Accordion value={editorSections} onValueChange={setEditorSections}>
+          <div className={`${mobileStep === 0 ? "block" : "hidden"} mt-4 bg-white px-3 dark:bg-zinc-900 sm:block sm:rounded-xl sm:shadow-xs sm:transition-shadow sm:hover:shadow-sm`}>
           <AccordionItem value="front">
             <AccordionTrigger className="hover:no-underline">Front page</AccordionTrigger>
             <AccordionContent>
@@ -330,12 +408,12 @@ export default function Home() {
           </AccordionItem>
           </div>
 
-          <div className="mt-3 bg-white px-3 dark:bg-zinc-900 sm:rounded-xl sm:shadow-xs sm:transition-shadow sm:hover:shadow-sm">
+          <div className={`${mobileStep === 1 || mobileStep === 2 ? "block" : "hidden"} mt-3 bg-white px-3 dark:bg-zinc-900 sm:block sm:rounded-xl sm:shadow-xs sm:transition-shadow sm:hover:shadow-sm`}>
           <AccordionItem value="back">
             <AccordionTrigger className="hover:no-underline">Back page</AccordionTrigger>
             <AccordionContent>
             <div className="grid gap-7 px-1 pt-3">
-              <FieldSet>
+              <FieldSet className={mobileStep === 1 ? "flex" : "hidden sm:flex"}>
               <FieldLegend>Voucher &amp; inclusions</FieldLegend>
               <EditorField id="back-title" label="Voucher title" value={content.backTitle} disabled onChange={update("backTitle")} />
               <Field>
@@ -372,7 +450,7 @@ export default function Home() {
               </Field>
               </FieldSet>
 
-              <FieldSet>
+              <FieldSet className={mobileStep === 2 ? "flex" : "hidden sm:flex"}>
               <FieldLegend>Guest &amp; stay</FieldLegend>
               <Field>
                 <div className="flex items-center justify-between gap-3">
@@ -406,7 +484,7 @@ export default function Home() {
               )}
               </FieldSet>
 
-              <FieldSet>
+              <FieldSet className="hidden sm:flex">
               <FieldLegend>Resort contact</FieldLegend>
               <EditorField id="address" label="Address" value={content.address} multiline disabled onChange={update("address")} />
               <EditorField id="phone" label="Phone" value={content.phone} disabled onChange={update("phone")} />
@@ -417,10 +495,14 @@ export default function Home() {
           </AccordionItem>
           </div>
         </Accordion>
+        <div className="sticky bottom-0 mt-4 flex gap-3 border-t border-zinc-200 bg-zinc-50/95 pt-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
+          <Button variant="outline" className="flex-1" onClick={() => changeMobileStep(mobileStep - 1)} disabled={mobileStep === 0}>Back</Button>
+          <Button className="flex-1" onClick={() => changeMobileStep(mobileStep + 1)}>Continue</Button>
+        </div>
         </div>
       </section>
 
-      <section className="grid min-w-0 gap-4 bg-transparent p-0 sm:rounded-2xl sm:bg-zinc-100/70 sm:p-5 sm:dark:bg-zinc-900/70 lg:p-6" aria-label="Voucher pages">
+      <section className={`${mobileStep === 3 ? "grid" : "hidden"} min-w-0 gap-4 bg-transparent p-0 sm:grid sm:rounded-2xl sm:bg-zinc-100/70 sm:p-5 sm:dark:bg-zinc-900/70 lg:p-6`} aria-label="Voucher pages">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="font-secondary text-sm font-semibold text-zinc-900 dark:text-zinc-100">Canvas preview</h2>
@@ -517,6 +599,10 @@ export default function Home() {
           </article>
         ))}
         </div>
+        <div className="sticky bottom-0 grid grid-cols-[auto_1fr] gap-3 border-t border-zinc-200 bg-white/95 px-4 py-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
+          <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
+          <Button onClick={() => preparePreview([0, 1])} disabled={exporting !== null}>{exporting !== null ? "Preparing…" : "Review & save PDF"}</Button>
+        </div>
       </section>
       </div>
 
@@ -532,8 +618,8 @@ export default function Home() {
             ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPreview(null)}>Cancel</Button>
-            <Button onClick={savePreviewAsPdf}>Download PDF</Button>
+            <Button variant="outline" onClick={() => setPreview(null)} disabled={isSavingPdf}>Cancel</Button>
+            <Button onClick={savePreviewAsPdf} disabled={isSavingPdf}>{isSavingPdf ? "Preparing PDF…" : "Save PDF"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
