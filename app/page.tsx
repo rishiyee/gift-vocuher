@@ -47,8 +47,8 @@ function isIOSDevice() {
     || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
-function downloadBlobWithDataUrl(blob: Blob, fileName: string) {
-  return new Promise<void>((resolve, reject) => {
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(reader.error ?? new Error("The PDF could not be read."));
     reader.onloadend = () => {
@@ -56,14 +56,7 @@ function downloadBlobWithDataUrl(blob: Blob, fileName: string) {
         reject(new Error("The PDF download URL could not be created."));
         return;
       }
-      const link = document.createElement("a");
-      link.href = reader.result;
-      link.download = fileName;
-      link.style.display = "none";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      resolve();
+      resolve(reader.result);
     };
     reader.readAsDataURL(blob);
   });
@@ -266,6 +259,15 @@ export default function Home() {
       return;
     }
     setExportError("");
+    const iosDownloadWindow = isIOSDevice() ? window.open("", "_blank") : null;
+    if (isIOSDevice() && !iosDownloadWindow) {
+      setExportError("Allow pop-ups for this site so the PDF can open on iPhone.");
+      return;
+    }
+    if (iosDownloadWindow) {
+      iosDownloadWindow.document.title = "Preparing gift voucher";
+      iosDownloadWindow.document.body.textContent = "Preparing your PDF…";
+    }
     const exportTarget = indices.length === 2 ? "all" : indices[0];
     setExporting(exportTarget);
     try {
@@ -277,8 +279,9 @@ export default function Home() {
         await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
         images = await renderPagesWithCanvas(indices);
       }
-      await downloadPdf(createPdf(indices, images));
+      await downloadPdf(createPdf(indices, images), iosDownloadWindow);
     } catch (error) {
+      iosDownloadWindow?.close();
       if (error instanceof DOMException && error.name === "AbortError") return;
       console.error("Voucher PDF generation failed.", error);
       const pageSuggestion = indices.length === 2 ? " You can also try downloading one page at a time." : "";
@@ -300,24 +303,12 @@ export default function Home() {
     return { pdf, fileName: `${guestFileName}${pageSuffix} - ${generatedAt}.pdf` };
   }
 
-  async function downloadPdf(generatedPdf: ReturnType<typeof createPdf>) {
+  async function downloadPdf(generatedPdf: ReturnType<typeof createPdf>, iosDownloadWindow: Window | null) {
     if (isIOSDevice()) {
       const pdfBlob = generatedPdf.pdf.output("blob");
-      const file = new File([pdfBlob], generatedPdf.fileName, { type: "application/pdf" });
-      const shareData = { files: [file] };
-      if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
-        try {
-          await navigator.share(shareData);
-          setDownloadNotice("On iPhone, choose Save to Files in the share sheet to keep the PDF.");
-          return;
-        } catch (error) {
-          if (error instanceof DOMException && error.name === "AbortError") throw error;
-          // Older iOS versions can reject sharing after PDF rendering consumes the tap activation.
-        }
-      }
-
-      await downloadBlobWithDataUrl(pdfBlob, generatedPdf.fileName);
-      setDownloadNotice("PDF downloaded. If it opens in a browser tab, use Share, then Save to Files.");
+      if (!iosDownloadWindow) throw new Error("The iPhone PDF window was blocked.");
+      iosDownloadWindow.location.href = await blobToDataUrl(pdfBlob);
+      setDownloadNotice("PDF opened. Tap Share, then Save to Files to download it on iOS 18.");
       return;
     }
 
