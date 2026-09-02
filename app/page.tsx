@@ -43,10 +43,15 @@ function toTitleCase(value: string) {
   return value.toLowerCase().replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
 }
 
+function isIOSDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
 const initialContent = {
   frontTitle: "GIFT\nVOUCHER",
   message: "",
-  sender: "OG BANGALORE",
+  sender: "",
   backTitle: "VOUCHER",
   villaType: "PRIVATE POOL VILLA",
   candlelightDinner: true,
@@ -82,14 +87,14 @@ function readSavedContent(): VoucherContent {
   }
 }
 
-function EditorField({ id, label, value, multiline = false, disabled = false, onChange }: { id: string; label: string; value: string; multiline?: boolean; disabled?: boolean; onChange: (value: string) => void }) {
+function EditorField({ id, label, value, placeholder, multiline = false, disabled = false, onChange }: { id: string; label: string; value: string; placeholder?: string; multiline?: boolean; disabled?: boolean; onChange: (value: string) => void }) {
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       {multiline ? (
-        <Textarea id={id} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+        <Textarea id={id} value={value} placeholder={placeholder} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
       ) : (
-        <Input id={id} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+        <Input id={id} value={value} placeholder={placeholder} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
       )}
     </Field>
   );
@@ -232,7 +237,7 @@ export default function Home() {
     setShareError("");
     setDownloadNotice("");
     const requiredFields: Array<[string, string]> = [
-      [content.frontTitle, "front title"], [content.message, "message"], [content.sender, "sender"],
+      [content.frontTitle, "front title"], [content.message, "message"],
       [content.backTitle, "voucher title"], [content.villaType, "villa type"], [content.guestName, "guest name"],
       [content.address, "address"], [content.phone, "phone"], [content.email, "email"],
       ...(content.voucherType === "dated"
@@ -288,10 +293,23 @@ export default function Home() {
     try {
       const generatedPdf = createPreviewPdf();
       if (!generatedPdf) throw new Error("The PDF preview is unavailable.");
+
+      if (isIOSDevice()) {
+        const file = new File([generatedPdf.pdf.output("blob")], generatedPdf.fileName, { type: "application/pdf" });
+        const shareData = { files: [file] };
+        if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+          await navigator.share(shareData);
+          setPreview(null);
+          setDownloadNotice("On iPhone, choose Save to Files in the share sheet to keep the PDF.");
+          return;
+        }
+      }
+
       await generatedPdf.pdf.save(generatedPdf.fileName, { returnPromise: true });
       setPreview(null);
       setDownloadNotice("PDF downloaded. On iPhone, find it in the Files app under Downloads.");
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       setDownloadError("The PDF could not be downloaded. Please try again.");
     } finally {
       setIsDownloading(false);
@@ -305,11 +323,7 @@ export default function Home() {
       const generatedPdf = createPreviewPdf();
       if (!generatedPdf) throw new Error("The PDF preview is unavailable.");
       const file = new File([generatedPdf.pdf.output("blob")], generatedPdf.fileName, { type: "application/pdf" });
-      const shareData = {
-        title: "Gift voucher",
-        text: `Gift voucher for ${content.guestName.trim() || "the guest"}`,
-        files: [file],
-      };
+      const shareData = { files: [file] };
       if (!navigator.share || (navigator.canShare && !navigator.canShare(shareData))) {
         setShareError("PDF sharing is unavailable in this browser. Use Download PDF instead.");
         return;
@@ -421,7 +435,7 @@ export default function Home() {
                   <Textarea id="message" rows={6} value={content.message} placeholder="Write a personal message" onChange={(event) => update("message")(event.target.value)} />
                   <FieldDescription>Write, paste, or autofill a message.</FieldDescription>
                 </Field>
-                <EditorField id="sender" label="Sender" value={content.sender} onChange={update("sender")} />
+                <EditorField id="sender" label="Sender" value={content.sender} placeholder="OG BANGALORE" onChange={update("sender")} />
               </FieldSet>
               </div>
             </AccordionContent>
