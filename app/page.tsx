@@ -30,6 +30,11 @@ function toTitleCase(value: string) {
   return value.toLowerCase().replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
 }
 
+function isIOSDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
 const initialContent = {
   frontTitle: "GIFT\nVOUCHER",
   message: "",
@@ -206,40 +211,50 @@ export default function Home() {
 
   function savePreviewAsPdf() {
     if (!preview) return;
-    const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [2100, 990], hotfixes: ["px_scaling"] });
-    preview.images.forEach((image, imageIndex) => {
-      if (imageIndex > 0) pdf.addPage([2100, 990], "landscape");
-      pdf.addImage(image, "JPEG", 0, 0, 2100, 990, undefined, "FAST");
-    });
-    const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
-    const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
-    const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
-    const fileName = `${guestFileName}${pageSuffix} - ${generatedAt}.pdf`;
-    const dataUri = pdf.output("datauristring");
-    const encodedPdf = dataUri.slice(dataUri.indexOf(",") + 1);
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = "/api/download-pdf";
-    form.enctype = "multipart/form-data";
-    form.style.display = "none";
+    let pdfUrl: string | null = null;
 
-    const pdfField = document.createElement("input");
-    pdfField.type = "hidden";
-    pdfField.name = "pdf";
-    pdfField.value = encodedPdf;
-    form.appendChild(pdfField);
+    try {
+      setExportError("");
+      const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [2100, 990], hotfixes: ["px_scaling"] });
+      preview.images.forEach((image, imageIndex) => {
+        if (imageIndex > 0) pdf.addPage([2100, 990], "landscape");
+        pdf.addImage(image, "JPEG", 0, 0, 2100, 990, undefined, "FAST");
+      });
+      const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
+      const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
+      const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
+      const fileName = `${guestFileName}${pageSuffix} - ${generatedAt}.pdf`;
+      const pdfBlob = pdf.output("blob");
+      if (!pdfBlob.size) throw new Error("The generated PDF is empty.");
+      pdfUrl = URL.createObjectURL(pdfBlob);
 
-    const fileNameField = document.createElement("input");
-    fileNameField.type = "hidden";
-    fileNameField.name = "fileName";
-    fileNameField.value = fileName;
-    form.appendChild(fileNameField);
+      if (isIOSDevice()) {
+        const pdfWindow = window.open(pdfUrl, "_blank");
+        if (pdfWindow) {
+          pdfWindow.focus();
+        } else {
+          window.location.assign(pdfUrl);
+        }
+        setDownloadNotice("PDF opened in Safari. Tap Share, then Save to Files.");
+      } else {
+        const link = document.createElement("a");
+        link.href = pdfUrl;
+        link.download = fileName;
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setDownloadNotice("PDF download started.");
+      }
 
-    document.body.appendChild(form);
-    form.submit();
-    form.remove();
-    setPreview(null);
-    setDownloadNotice("PDF download started. On iPhone, find it in the Files app under Downloads.");
+      const revokeDelay = isIOSDevice() ? 5 * 60_000 : 60_000;
+      window.setTimeout(() => URL.revokeObjectURL(pdfUrl!), revokeDelay);
+      setPreview(null);
+    } catch (error) {
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      console.error("PDF download failed.", error);
+      setExportError("The PDF could not be opened. Close other Safari tabs to free memory, then try one page at a time.");
+    }
   }
 
   if (!isUnlocked) {
