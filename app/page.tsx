@@ -17,7 +17,6 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -135,14 +134,9 @@ export default function Home() {
   const [content, setContent] = useState<VoucherContent>(readSavedContent);
   const [isDark, setIsDark] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("gift-voucher-theme") === "dark");
   const [exporting, setExporting] = useState<number | "all" | null>(null);
-  const [preview, setPreview] = useState<{ indices: number[]; images: string[] } | null>(null);
   const [pasteStatus, setPasteStatus] = useState("");
   const [inclusionsVerified, setInclusionsVerified] = useState(false);
   const [exportError, setExportError] = useState("");
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
-  const [downloadError, setDownloadError] = useState("");
-  const [shareError, setShareError] = useState("");
   const [downloadNotice, setDownloadNotice] = useState("");
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
@@ -150,7 +144,6 @@ export default function Home() {
   const inclusionText = selectedInclusions.length ? `Includes ${selectedInclusions.join(" and ")}.` : "";
   const displayMessage = content.message.trim();
   const messageState = !content.message.trim() ? "Empty" : content.message === DEFAULT_MESSAGE ? "Autofilled" : "Custom";
-  const isPdfActionPending = isDownloading || isSharing;
 
   useEffect(() => {
     window.localStorage.setItem(VOUCHER_STORAGE_KEY, JSON.stringify(content));
@@ -233,8 +226,6 @@ export default function Home() {
   }
 
   async function preparePreview(indices: number[]) {
-    setDownloadError("");
-    setShareError("");
     setDownloadNotice("");
     const requiredFields: Array<[string, string]> = [
       [content.frontTitle, "front title"], [content.message, "message"],
@@ -264,78 +255,42 @@ export default function Home() {
         await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
         images = await renderPagesWithCanvas(indices);
       }
-      setPreview({ indices, images });
+      await downloadPdf(createPdf(indices, images));
     } catch (error) {
-      console.error("Voucher PDF preview rendering failed.", error);
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      console.error("Voucher PDF generation failed.", error);
       const pageSuggestion = indices.length === 2 ? " You can also try downloading one page at a time." : "";
-      setExportError(`The PDF preview could not be prepared. Please wait for the voucher images to appear, then try again.${pageSuggestion}`);
+      setExportError(`The PDF could not be prepared. Please wait for the voucher images to appear, then try again.${pageSuggestion}`);
     } finally {
       setExporting(null);
     }
   }
 
-  function createPreviewPdf() {
-    if (!preview) return null;
+  function createPdf(indices: number[], images: string[]) {
     const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT], hotfixes: ["px_scaling"] });
-    preview.images.forEach((image, imageIndex) => {
+    images.forEach((image, imageIndex) => {
       if (imageIndex > 0) pdf.addPage([PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT], "landscape");
       pdf.addImage(image, "PNG", 0, 0, PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT, undefined, "FAST");
     });
     const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
-    const pageSuffix = preview.indices.length === 2 ? " - Front and Back" : preview.indices[0] === 0 ? " - Front" : " - Back";
+    const pageSuffix = indices.length === 2 ? " - Front and Back" : indices[0] === 0 ? " - Front" : " - Back";
     const generatedAt = format(new Date(), "yyyy-MM-dd_HH-mm-ss");
     return { pdf, fileName: `${guestFileName}${pageSuffix} - ${generatedAt}.pdf` };
   }
 
-  async function downloadPreviewPdf() {
-    setIsDownloading(true);
-    setDownloadError("");
-    try {
-      const generatedPdf = createPreviewPdf();
-      if (!generatedPdf) throw new Error("The PDF preview is unavailable.");
-
-      if (isIOSDevice()) {
-        const file = new File([generatedPdf.pdf.output("blob")], generatedPdf.fileName, { type: "application/pdf" });
-        const shareData = { files: [file] };
-        if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
-          await navigator.share(shareData);
-          setPreview(null);
-          setDownloadNotice("On iPhone, choose Save to Files in the share sheet to keep the PDF.");
-          return;
-        }
-      }
-
-      await generatedPdf.pdf.save(generatedPdf.fileName, { returnPromise: true });
-      setPreview(null);
-      setDownloadNotice("PDF downloaded. On iPhone, find it in the Files app under Downloads.");
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setDownloadError("The PDF could not be downloaded. Please try again.");
-    } finally {
-      setIsDownloading(false);
-    }
-  }
-
-  async function sharePreviewPdf() {
-    setIsSharing(true);
-    setShareError("");
-    try {
-      const generatedPdf = createPreviewPdf();
-      if (!generatedPdf) throw new Error("The PDF preview is unavailable.");
+  async function downloadPdf(generatedPdf: ReturnType<typeof createPdf>) {
+    if (isIOSDevice()) {
       const file = new File([generatedPdf.pdf.output("blob")], generatedPdf.fileName, { type: "application/pdf" });
       const shareData = { files: [file] };
-      if (!navigator.share || (navigator.canShare && !navigator.canShare(shareData))) {
-        setShareError("PDF sharing is unavailable in this browser. Use Download PDF instead.");
+      if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+        await navigator.share(shareData);
+        setDownloadNotice("On iPhone, choose Save to Files in the share sheet to keep the PDF.");
         return;
       }
-      await navigator.share(shareData);
-      setPreview(null);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setShareError("The PDF could not be shared. Please try again or use Download PDF.");
-    } finally {
-      setIsSharing(false);
     }
+
+    await generatedPdf.pdf.save(generatedPdf.fileName, { returnPromise: true });
+    setDownloadNotice("PDF downloaded. On iPhone, find it in the Files app under Downloads.");
   }
 
   if (!isUnlocked) {
@@ -632,26 +587,6 @@ export default function Home() {
       </section>
       </div>
 
-      <Dialog open={preview !== null} onOpenChange={(open) => !open && !isPdfActionPending && setPreview(null)}>
-        <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] max-w-none overflow-y-auto p-3 sm:w-[calc(100%-2rem)] sm:max-w-none sm:p-5 lg:w-[min(1200px,calc(100%-3rem))]">
-          <DialogHeader>
-            <DialogTitle>PDF preview</DialogTitle>
-            <DialogDescription>Review the selected voucher pages, then download or share the PDF.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4" aria-label="Selected PDF pages">
-            {preview?.images.map((image, index) => (
-              <Image key={`${preview.indices[index]}-${image.length}`} src={image} alt={`${preview.indices[index] === 0 ? "Front" : "Back"} voucher preview`} width={1050} height={495} unoptimized className="h-auto w-full" />
-            ))}
-          </div>
-          {downloadError && <p role="alert" className="text-sm text-destructive">{downloadError}</p>}
-          {shareError && <p role="alert" className="text-sm text-destructive">{shareError}</p>}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPreview(null)} disabled={isPdfActionPending}>Cancel</Button>
-            <Button variant="outline" onClick={sharePreviewPdf} disabled={isPdfActionPending}>{isSharing ? "Sharing..." : "Share PDF"}</Button>
-            <Button onClick={downloadPreviewPdf} disabled={isPdfActionPending}>{isDownloading ? "Downloading..." : "Download PDF"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       <p className="sr-only" aria-live="polite">{pasteStatus}</p>
     </main>
   );
