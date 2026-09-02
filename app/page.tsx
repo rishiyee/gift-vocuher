@@ -23,7 +23,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 
 const pages = ["Front", "Back"];
-const APP_PIN = "2026";
+const APP_PIN = "1947";
 const VOUCHER_STORAGE_KEY = "gift-voucher-content-v2";
 const PDF_PAGE_WIDTH = 1050;
 const PDF_PAGE_HEIGHT = 495;
