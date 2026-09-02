@@ -198,10 +198,9 @@ export default function Home() {
       image.addEventListener("load", () => resolve(), { once: true });
       image.addEventListener("error", () => resolve(), { once: true });
     })));
-    const isMobile = window.matchMedia("(max-width: 767px), (pointer: coarse)").matches;
     return toPng(canvas, {
-      canvasWidth: isMobile ? 1680 : 2100,
-      canvasHeight: isMobile ? 792 : 990,
+      canvasWidth: 2100,
+      canvasHeight: 990,
       pixelRatio: 1,
       cacheBust: true,
       style: { borderRadius: "0px" },
@@ -259,34 +258,18 @@ export default function Home() {
       const fileName = `${guestFileName}${pageSuffix} - ${generatedAt}.pdf`;
 
       const pdfBlob = pdf.output("blob");
-      const pdfFile = new File([pdfBlob], fileName, { type: "application/pdf" });
-      const isAppleMobile = /iPad|iPhone|iPod/.test(navigator.userAgent)
-        || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-      const canShareFile = typeof navigator.share === "function"
-        && typeof navigator.canShare === "function"
-        && navigator.canShare({ files: [pdfFile] });
-
-      if (isAppleMobile && canShareFile) {
-        await navigator.share({ files: [pdfFile], title: fileName });
-        setDownloadNotice("PDF is ready. Choose Save to Files in the share sheet to keep it on your device.");
-      } else {
-        const objectUrl = URL.createObjectURL(pdfBlob);
-        const downloadLink = document.createElement("a");
-        downloadLink.href = objectUrl;
-        downloadLink.download = fileName;
-        downloadLink.rel = "noopener";
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        downloadLink.remove();
-        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-        setDownloadNotice("PDF download requested. Check your browser downloads if it does not appear immediately.");
-      }
+      const objectUrl = URL.createObjectURL(pdfBlob);
+      const downloadLink = document.createElement("a");
+      downloadLink.href = objectUrl;
+      downloadLink.download = fileName;
+      downloadLink.rel = "noopener";
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      setDownloadNotice("PDF download requested. Check your browser downloads if it does not appear immediately.");
       setPreview(null);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        setDownloadNotice("Save cancelled. Your PDF preview is still open.");
-        return;
-      }
       console.error("PDF download failed.", error);
       setExportError("The PDF could not be saved. Try one page at a time, or use Safari's Share menu and choose Save to Files.");
     } finally {
