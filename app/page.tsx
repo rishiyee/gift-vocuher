@@ -11,11 +11,11 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format, isValid, parse } from "date-fns";
+import { addDays, format, isValid, parse } from "date-fns";
 import { toJpeg, toPng } from "html-to-image";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 const pages = ["Front", "Back"];
 const APP_PIN = "1947";
 const VOUCHER_STORAGE_KEY = "gift-voucher-content-v2";
-const DEFAULT_MESSAGE = "Wishing you both a lifetime of love, laughter, and beautiful moments together.\n\nMay this little getaway be the beginning of countless wonderful journeys and cherished memories.";
+const DEFAULT_MESSAGE = "Wishing you both a lifetime of love, laughter, and beautiful moments together. May this little getaway be the beginning of countless wonderful journeys and cherished memories.";
 
 function toTitleCase(value: string) {
   return value.toLowerCase().replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
@@ -37,8 +37,8 @@ const initialContent = {
   sender: "",
   backTitle: "VOUCHER",
   villaType: "PRIVATE POOL VILLA",
-  candlelightDinner: true,
-  flowerBed: true,
+  candlelightDinner: false,
+  flowerBed: false,
   guestName: "",
   voucherType: "dated",
   checkInDate: "14 September 2026",
@@ -126,7 +126,7 @@ export default function Home() {
   const [downloadNotice, setDownloadNotice] = useState("");
   const [isSavingPdf, setIsSavingPdf] = useState(false);
   const [mobileStep, setMobileStep] = useState(0);
-  const [editorSections, setEditorSections] = useState<string[]>(["front"]);
+  const [editorSections, setEditorSections] = useState<string[]>(["message"]);
   const [mobileShareFile, setMobileShareFile] = useState<File | null>(null);
   const [preparationProgress, setPreparationProgress] = useState(0);
   const [exportQuality, setExportQuality] = useState<ExportQuality>("balanced");
@@ -168,7 +168,7 @@ export default function Home() {
     setPreparationProgress(0);
     setPreparationRequested(false);
     setMobileStep(boundedStep);
-    setEditorSections(boundedStep === 0 ? ["front"] : boundedStep < 3 ? ["back"] : []);
+    setEditorSections(boundedStep === 0 ? ["message"] : boundedStep === 1 ? ["voucher"] : boundedStep === 2 ? ["stay"] : []);
     setExportError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -297,16 +297,20 @@ export default function Home() {
     if (!validateVoucher()) return;
     setExporting("all");
     try {
-      await document.fonts.ready;
-      await Promise.all(Array.from(document.querySelectorAll<HTMLImageElement>(".voucher-print-area img")).map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => {
-        image.addEventListener("load", () => resolve(), { once: true });
-        image.addEventListener("error", () => resolve(), { once: true });
-      })));
-      window.print();
-      setDownloadNotice("Print view opened. On iPhone or iPad, expand the preview and use Share to save the PDF.");
+      const images = [await renderPage(0, "high"), await renderPage(1, "high")];
+      const { blob, fileName } = createGiftSizePdf(images, [0, 1]);
+      const objectUrl = URL.createObjectURL(blob);
+      const printWindow = window.open(objectUrl, "_blank", "noopener");
+      if (!printWindow) {
+        downloadPdfBlob(blob, fileName);
+        setDownloadNotice("Popup blocked. The high-quality gift-size PDF (210 × 99 mm) was downloaded instead.");
+      } else {
+        setDownloadNotice("High-quality gift-size PDF opened (210 × 99 mm). Print or save from that tab.");
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     } catch (error) {
       console.error("Voucher print preparation failed.", error);
-      setExportError("The high-quality print view could not be opened. Use the standard PDF download instead.");
+      setExportError("The high-quality print PDF could not be created. Use the standard PDF download instead.");
     } finally {
       setExporting(null);
     }
@@ -468,7 +472,7 @@ export default function Home() {
 
   return (
     <main className="min-h-dvh w-full bg-zinc-50/70 px-0 pb-8 dark:bg-zinc-950 sm:bg-transparent sm:px-[clamp(16px,3vw,48px)] sm:pb-20 sm:dark:bg-transparent">
-      <header className="sticky top-0 z-40 mx-0 flex items-center justify-between gap-4 border-b border-zinc-200/80 bg-white/90 px-4 py-3.5 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/90 sm:-mx-[clamp(16px,3vw,48px)] sm:px-[clamp(16px,3vw,48px)] sm:py-4">
+      <header className="no-print sticky top-0 z-40 mx-0 flex items-center justify-between gap-4 border-b border-zinc-200/80 bg-white/90 px-4 py-3.5 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/90 sm:-mx-[clamp(16px,3vw,48px)] sm:px-[clamp(16px,3vw,48px)] sm:py-4">
         <div>
           <p className="font-secondary text-[10px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Voucher studio</p>
           <h1 className="font-secondary text-lg font-semibold tracking-[-.02em] sm:text-xl">Gift voucher</h1>
@@ -481,9 +485,6 @@ export default function Home() {
           <DropdownMenuTrigger render={<Button className="hidden sm:inline-flex" disabled={exporting !== null} />}>{exporting !== null ? "Preparing PDF..." : "Download PDF"}</DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuGroup>
-              <DropdownMenuLabel>Choose pages</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => preparePreview([0])}>Front page</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => preparePreview([1])}>Back page</DropdownMenuItem>
               <DropdownMenuItem onClick={() => preparePreview([0, 1])}>Front &amp; back</DropdownMenuItem>
               <DropdownMenuItem onClick={printVoucher}>High-quality print / PDF</DropdownMenuItem>
             </DropdownMenuGroup>
@@ -491,10 +492,10 @@ export default function Home() {
         </DropdownMenu>
         </div>
       </header>
-      {exportError && <div role="alert" className="mx-4 mt-3 rounded-xl bg-destructive/10 px-4 py-3 font-secondary text-sm leading-5 text-destructive sm:mx-0 sm:mt-4 sm:rounded-none">{exportError}</div>}
-      {downloadNotice && <div role="status" className="mx-4 mt-3 rounded-xl bg-emerald-500/10 px-4 py-3 font-secondary text-sm leading-5 text-emerald-700 dark:text-emerald-400 sm:mx-0 sm:mt-4 sm:rounded-none">{downloadNotice}</div>}
+      {exportError && <div role="alert" className="no-print mx-4 mt-3 rounded-xl bg-destructive/10 px-4 py-3 font-secondary text-sm leading-5 text-destructive sm:mx-0 sm:mt-4 sm:rounded-none">{exportError}</div>}
+      {downloadNotice && <div role="status" className="no-print mx-4 mt-3 rounded-xl bg-emerald-500/10 px-4 py-3 font-secondary text-sm leading-5 text-emerald-700 dark:text-emerald-400 sm:mx-0 sm:mt-4 sm:rounded-none">{downloadNotice}</div>}
 
-      <nav className="px-4 pt-4 sm:hidden" aria-label="Voucher creation progress">
+      <nav className="no-print px-4 pt-4 sm:hidden" aria-label="Voucher creation progress">
         <div className="mb-2.5 flex items-center justify-between">
           <p className="font-secondary text-xs font-semibold">Step {mobileStep + 1} of {mobileSteps.length}</p>
           <p className="font-secondary text-xs text-zinc-500">{mobileSteps[mobileStep]}</p>
@@ -504,8 +505,8 @@ export default function Home() {
         </div>
       </nav>
 
-      <div className="mt-4 grid items-start gap-4 px-4 sm:mt-5 sm:gap-5 sm:px-0 lg:mt-8 xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-8">
-      <section className={`${mobileStep === 3 ? "hidden" : "block"} self-start overflow-hidden rounded-2xl border border-zinc-200/70 bg-white font-secondary shadow-[0_8px_28px_rgba(0,0,0,.05)] dark:border-zinc-800 dark:bg-zinc-900 sm:block sm:border-0 sm:shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] xl:sticky xl:top-24`} aria-labelledby="editor-title">
+      <div className="voucher-studio-layout mt-4 grid items-start gap-4 px-4 sm:mt-5 sm:gap-5 sm:px-0 lg:mt-8 xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-8">
+      <section className={`no-print ${mobileStep === 3 ? "hidden" : "block"} self-start overflow-hidden rounded-2xl border border-zinc-200/70 bg-white font-secondary shadow-[0_8px_28px_rgba(0,0,0,.05)] dark:border-zinc-800 dark:bg-zinc-900 sm:block sm:border-0 sm:shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] xl:sticky xl:top-24`} aria-labelledby="editor-title">
         <div className="px-4 py-4 sm:px-6 sm:py-6">
           <div className="mb-2.5 flex items-center justify-between gap-3 sm:mb-3">
             <p className="font-secondary text-[11px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Live editor</p>
@@ -517,8 +518,8 @@ export default function Home() {
         <div className="bg-zinc-50/70 px-3 pb-3 pt-px dark:bg-zinc-950/60 sm:px-5 sm:pb-5 sm:pt-0">
         <Accordion value={editorSections} onValueChange={setEditorSections}>
           <div className={`${mobileStep === 0 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 shadow-xs dark:bg-zinc-900 sm:mt-4 sm:block sm:px-3 sm:transition-shadow sm:hover:shadow-sm`}>
-          <AccordionItem value="front">
-            <AccordionTrigger className="hover:no-underline">Front page</AccordionTrigger>
+          <AccordionItem value="message">
+            <AccordionTrigger className="hover:no-underline">Message</AccordionTrigger>
             <AccordionContent>
               <div className="pt-2 sm:px-1 sm:pt-3">
               <FieldSet>
@@ -536,19 +537,19 @@ export default function Home() {
                   <Textarea id="message" rows={6} value={content.message} placeholder="Write a personal message" onChange={(event) => update("message")(event.target.value)} />
                   <FieldDescription>Write, paste, or autofill a message.</FieldDescription>
                 </Field>
-                <EditorField id="sender" label="Sender" value={content.sender} placeholder="OG BANGALORE" onChange={update("sender")} />
+                <EditorField id="sender" label="Sender" value={content.sender} placeholder="Enter sender name" onChange={update("sender")} />
               </FieldSet>
               </div>
             </AccordionContent>
           </AccordionItem>
           </div>
 
-          <div className={`${mobileStep === 1 || mobileStep === 2 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 shadow-xs dark:bg-zinc-900 sm:block sm:px-3 sm:transition-shadow sm:hover:shadow-sm`}>
-          <AccordionItem value="back">
-            <AccordionTrigger className="hover:no-underline">Back page</AccordionTrigger>
+          <div className={`${mobileStep === 1 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 shadow-xs dark:bg-zinc-900 sm:block sm:px-3 sm:transition-shadow sm:hover:shadow-sm`}>
+          <AccordionItem value="voucher">
+            <AccordionTrigger className="hover:no-underline">Voucher</AccordionTrigger>
             <AccordionContent>
-            <div className="grid gap-6 pt-2 sm:gap-7 sm:px-1 sm:pt-3">
-              <FieldSet className={mobileStep === 1 ? "flex" : "hidden sm:flex"}>
+            <div className="pt-2 sm:px-1 sm:pt-3">
+              <FieldSet>
               <FieldLegend>Voucher &amp; inclusions</FieldLegend>
               <EditorField id="back-title" label="Voucher title" value={content.backTitle} disabled onChange={update("backTitle")} />
               <Field>
@@ -584,8 +585,17 @@ export default function Home() {
                 </Field>
               </Field>
               </FieldSet>
+            </div>
+            </AccordionContent>
+          </AccordionItem>
+          </div>
 
-              <FieldSet className={mobileStep === 2 ? "flex" : "hidden sm:flex"}>
+          <div className={`${mobileStep === 2 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 shadow-xs dark:bg-zinc-900 sm:block sm:px-3 sm:transition-shadow sm:hover:shadow-sm`}>
+          <AccordionItem value="stay">
+            <AccordionTrigger className="hover:no-underline">Stay</AccordionTrigger>
+            <AccordionContent>
+            <div className="pt-2 sm:px-1 sm:pt-3">
+              <FieldSet>
               <FieldLegend>Guest &amp; stay</FieldLegend>
               <Field>
                 <div className="flex items-center justify-between gap-3">
@@ -609,7 +619,14 @@ export default function Home() {
               </Field>
               {content.voucherType === "dated" ? (
                 <>
-                  <DateEditorField id="check-in-date" label="Check-in date" value={content.checkInDate} onChange={update("checkInDate")} />
+                  <DateEditorField id="check-in-date" label="Check-in date" value={content.checkInDate} onChange={(checkInDate) => {
+                    const parsedCheckIn = parse(checkInDate, "d MMMM yyyy", new Date());
+                    setContent((current) => ({
+                      ...current,
+                      checkInDate,
+                      checkOutDate: isValid(parsedCheckIn) ? format(addDays(parsedCheckIn, 1), "d MMMM yyyy") : current.checkOutDate,
+                    }));
+                  }} />
                   <EditorField id="check-in-time" label="Check-in time" value={content.checkInTime} disabled onChange={update("checkInTime")} />
                   <DateEditorField id="check-out-date" label="Check-out date" value={content.checkOutDate} onChange={update("checkOutDate")} />
                   <EditorField id="check-out-time" label="Check-out time" value={content.checkOutTime} disabled onChange={update("checkOutTime")} />
@@ -617,13 +634,6 @@ export default function Home() {
               ) : (
                 <DateEditorField id="redeem-date" label="Redeem before" value={content.redeemDate} onChange={update("redeemDate")} />
               )}
-              </FieldSet>
-
-              <FieldSet className="hidden sm:flex">
-              <FieldLegend>Resort contact</FieldLegend>
-              <EditorField id="address" label="Address" value={content.address} multiline disabled onChange={update("address")} />
-              <EditorField id="phone" label="Phone" value={content.phone} disabled onChange={update("phone")} />
-              <EditorField id="email" label="Email" value={content.email} disabled onChange={update("email")} />
               </FieldSet>
             </div>
             </AccordionContent>
