@@ -39,6 +39,7 @@ const initialContent = {
   villaType: "PRIVATE POOL VILLA",
   candlelightDinner: false,
   flowerBed: false,
+  floatingBreakfast: false,
   guestName: "",
   voucherType: "dated",
   checkInDate: "14 September 2026",
@@ -133,8 +134,11 @@ export default function Home() {
   const [preparationRequested, setPreparationRequested] = useState(false);
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
-  const selectedInclusions = [content.candlelightDinner && "a candlelight dinner", content.flowerBed && "a flower bed"].filter(Boolean);
-  const inclusionText = selectedInclusions.length ? `Includes ${selectedInclusions.join(" and ")}.` : "";
+  const selectedInclusions = [
+    content.candlelightDinner && "Candlelight dinner",
+    content.flowerBed && "Flower bed decoration",
+    content.floatingBreakfast && "Floating breakfast",
+  ].filter((inclusion): inclusion is string => Boolean(inclusion));
   const displayMessage = content.message.trim();
   const messageState = !content.message.trim() ? "Empty" : content.message === DEFAULT_MESSAGE ? "Autofilled" : "Custom";
   const mobileSteps = ["Message", "Voucher", "Stay", "Review"];
@@ -577,6 +581,10 @@ export default function Home() {
                     <Switch id="flower-bed" checked={content.flowerBed} onCheckedChange={(value) => { update("flowerBed")(value); setInclusionsVerified(false); }} />
                     <FieldLabel htmlFor="flower-bed">Flower bed</FieldLabel>
                   </Field>
+                  <Field orientation="horizontal">
+                    <Switch id="floating-breakfast" checked={content.floatingBreakfast} onCheckedChange={(value) => { update("floatingBreakfast")(value); setInclusionsVerified(false); }} />
+                    <FieldLabel htmlFor="floating-breakfast">Floating breakfast</FieldLabel>
+                  </Field>
                 </div>
                 {selectedInclusions.length === 0 && <FieldDescription>No inclusions will be shown on the voucher.</FieldDescription>}
                 <Field orientation="horizontal">
@@ -733,15 +741,17 @@ export default function Home() {
 
                   <div className="mt-[2.4cqw] h-px w-full bg-[#beb16b]/40" />
 
-                  <div className={inclusionText ? "grid flex-1 grid-cols-[1fr_1px_1fr] items-center gap-[4.3cqw]" : "grid flex-1 grid-cols-1 items-center"}>
-                    {inclusionText && <div className="order-3">
+                  <div className={selectedInclusions.length ? "grid flex-1 grid-cols-[1fr_1px_1fr] items-center gap-[4.3cqw]" : "grid flex-1 grid-cols-1 items-center"}>
+                    {selectedInclusions.length > 0 && <div className="order-3">
                       <p className="font-secondary text-[.65cqw] font-light tracking-[.22em]">DETAILS</p>
-                      <p className="mt-[1cqw] font-primary text-[1.22cqw] leading-[1.45] font-light">{inclusionText}</p>
+                      <ul className="mt-[1cqw] grid gap-[.35cqw] font-primary text-[1.22cqw] leading-[1.3] font-light">
+                        {selectedInclusions.map((inclusion) => <li key={inclusion} className="flex items-baseline gap-[.65cqw]"><span aria-hidden="true" className="text-[.72em]">•</span><span>{inclusion}</span></li>)}
+                      </ul>
                     </div>}
 
-                    {inclusionText && <div className="order-2 h-[10.5cqw] w-px bg-[#beb16b]/25" />}
+                    {selectedInclusions.length > 0 && <div className="order-2 h-[10.5cqw] w-px bg-[#beb16b]/25" />}
 
-                    <div className={inclusionText ? "order-1" : "justify-self-start text-left"}>
+                    <div className={selectedInclusions.length ? "order-1" : "justify-self-start text-left"}>
                       <p className="font-secondary text-[.65cqw] font-light tracking-[.22em]">NAME</p>
                       <p className="mt-[.8cqw] font-primary text-[1.85cqw] leading-none font-light">{content.guestName}</p>
 
