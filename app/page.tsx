@@ -186,39 +186,6 @@ export default function Home() {
     window.localStorage.setItem("gift-voucher-theme", isDark ? "dark" : "light");
   }, [isDark]);
 
-  useEffect(() => {
-    if (mobileStep !== 3 || !preparationRequested) return;
-    let cancelled = false;
-    void (async () => {
-      await Promise.resolve();
-      if (!cancelled) {
-        setExporting("all");
-        setPreparationProgress(5);
-      }
-      try {
-        const { blob, fileName } = await createMobileGiftSizePdf(exportQuality, (percent) => {
-          if (!cancelled) setPreparationProgress(percent);
-        });
-        if (!cancelled) {
-          setPreparationProgress(100);
-          setMobileShareFile(new File([blob], fileName, { type: "application/pdf" }));
-        }
-      } catch (error) {
-        console.error("Gift voucher preparation failed.", error);
-        if (!cancelled) {
-          setPreparationProgress(0);
-          setPreparationRequested(false);
-          setExportError("The gift voucher could not be prepared. Choose Fast quality and try again.");
-        }
-      } finally {
-        if (!cancelled) setExporting(null);
-      }
-    })();
-    return () => { cancelled = true; };
-    // The PDF is prepared once when the final mobile step becomes visible.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mobileStep, exportQuality, preparationRequested]);
-
   function unlockApp(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pin === APP_PIN) {
@@ -357,17 +324,22 @@ export default function Home() {
   }
 
   function shouldUseConstrainedIphoneExport() {
-    if (typeof navigator === "undefined") return false;
-    if (!/iPhone|iPod/.test(navigator.userAgent)) return false;
+    if (!isIphoneDevice()) return false;
     const iosMajorVersion = Number(navigator.userAgent.match(/OS (\d+)_/)?.[1] ?? 0);
     return (iosMajorVersion > 0 && iosMajorVersion <= 16)
       || navigator.hardwareConcurrency <= 4
       || window.screen.width <= 375;
   }
 
+  function isIphoneDevice() {
+    return typeof navigator !== "undefined" && /iPhone|iPod/.test(navigator.userAgent);
+  }
+
   async function createMobileGiftSizePdf(quality: ExportQuality, onProgress: (percent: number) => void) {
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99], compress: true });
-    const useLegacyRenderer = shouldUseConstrainedIphoneExport();
+    // Safari is more reliable with html2canvas than foreignObject-based rendering,
+    // including on current, larger iPhones.
+    const useLegacyRenderer = isIphoneDevice();
     for (const index of [0, 1]) {
       onProgress(index === 0 ? 10 : 55);
       const image = await renderPage(index, quality, useLegacyRenderer);
@@ -392,6 +364,15 @@ export default function Home() {
     downloadLink.click();
     downloadLink.remove();
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  }
+
+  function openPdfForSaving(file: File) {
+    const objectUrl = URL.createObjectURL(file);
+    const pdfWindow = window.open(objectUrl, "_blank");
+    if (pdfWindow) pdfWindow.opener = null;
+    else window.location.assign(objectUrl);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60_000);
+    setDownloadNotice("PDF opened. In Safari, tap Share, then choose Save to Files.");
   }
 
   async function shareGiftSizePdf() {
@@ -435,6 +416,39 @@ export default function Home() {
       setIsSavingPdf(false);
     }
   }
+
+  useEffect(() => {
+    if (mobileStep !== 3 || !preparationRequested) return;
+    let cancelled = false;
+    void (async () => {
+      await Promise.resolve();
+      if (!cancelled) {
+        setExporting("all");
+        setPreparationProgress(5);
+      }
+      try {
+        const { blob, fileName } = await createMobileGiftSizePdf(exportQuality, (percent) => {
+          if (!cancelled) setPreparationProgress(percent);
+        });
+        if (!cancelled) {
+          setPreparationProgress(100);
+          setMobileShareFile(new File([blob], fileName, { type: "application/pdf" }));
+        }
+      } catch (error) {
+        console.error("Gift voucher preparation failed.", error);
+        if (!cancelled) {
+          setPreparationProgress(0);
+          setPreparationRequested(false);
+          setExportError("The gift voucher could not be prepared. Choose Fast quality and try again.");
+        }
+      } finally {
+        if (!cancelled) setExporting(null);
+      }
+    })();
+    return () => { cancelled = true; };
+    // The PDF is prepared once when the final mobile step becomes visible.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mobileStep, exportQuality, preparationRequested]);
 
   if (!isUnlocked) {
     return (
@@ -796,12 +810,16 @@ export default function Home() {
         </div>
         <div className="voucher-print-chrome sticky bottom-0 -mx-4 -mb-4 grid grid-cols-[auto_1fr] gap-2.5 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
-          <Button
-            onClick={mobileShareFile ? shareGiftSizePdf : () => setPreparationRequested(true)}
-            disabled={preparationRequested && !mobileShareFile}
-          >
-            {mobileShareFile ? "Share gift voucher" : preparationRequested ? `Preparing ${preparationProgress}%…` : "Prepare gift voucher"}
-          </Button>
+          {mobileShareFile ? (
+            <div className="grid grid-cols-2 gap-2.5">
+              <Button variant="outline" onClick={() => openPdfForSaving(mobileShareFile)}>Open PDF</Button>
+              <Button onClick={shareGiftSizePdf}>Share voucher</Button>
+            </div>
+          ) : (
+            <Button onClick={() => setPreparationRequested(true)} disabled={preparationRequested}>
+              {preparationRequested ? `Preparing ${preparationProgress}%…` : "Prepare gift voucher"}
+            </Button>
+          )}
         </div>
       </section>
       </div>
