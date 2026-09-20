@@ -37,6 +37,7 @@ const initialContent = {
   sender: "",
   backTitle: "VOUCHER",
   villaType: "PRIVATE POOL VILLA",
+  bbqDinner: false,
   candlelightDinner: false,
   flowerBed: false,
   floatingBreakfast: false,
@@ -135,6 +136,7 @@ export default function Home() {
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [
+    content.bbqDinner && "BBQ Dinner",
     content.candlelightDinner && "Candlelight dinner",
     content.flowerBed && "Flower bed decoration",
     content.floatingBreakfast && "Floating breakfast",
@@ -587,6 +589,10 @@ export default function Home() {
               <Field>
                 <FieldLabel>Inclusions</FieldLabel>
                 <div className="grid gap-3">
+                  <Field orientation="horizontal">
+                    <Switch id="bbq-dinner" checked={content.bbqDinner} onCheckedChange={(value) => { update("bbqDinner")(value); setInclusionsVerified(false); }} />
+                    <FieldLabel htmlFor="bbq-dinner">BBQ Dinner</FieldLabel>
+                  </Field>
                   <Field orientation="horizontal">
                     <Switch id="candlelight-dinner" checked={content.candlelightDinner} onCheckedChange={(value) => { update("candlelightDinner")(value); setInclusionsVerified(false); }} />
                     <FieldLabel htmlFor="candlelight-dinner">Candlelight dinner</FieldLabel>
