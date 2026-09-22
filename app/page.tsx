@@ -118,6 +118,7 @@ export default function Home() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
+  const pinInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const [content, setContent] = useState<VoucherContent>(readSavedContent);
   const [isDark, setIsDark] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("gift-voucher-theme") === "dark");
   const [exporting, setExporting] = useState<number | "all" | null>(null);
@@ -188,15 +189,41 @@ export default function Home() {
     window.localStorage.setItem("gift-voucher-theme", isDark ? "dark" : "light");
   }, [isDark]);
 
-  function unlockApp(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (pin === APP_PIN) {
+  function unlockApp(candidate: string) {
+    if (candidate === APP_PIN) {
       setIsUnlocked(true);
       setPinError("");
       return;
     }
-    setPinError("Incorrect PIN. Please try again.");
+    setPinError("Incorrect password. Please try again.");
+    setPin("");
+    window.setTimeout(() => pinInputRefs.current[0]?.focus(), 0);
     if ("vibrate" in navigator) navigator.vibrate([80, 50, 80]);
+  }
+
+  function updatePin(index: number, value: string) {
+    const digit = value.replace(/\D/g, "").slice(-1);
+    const nextDigits = pin.padEnd(APP_PIN.length, " ").split("");
+    nextDigits[index] = digit || " ";
+    const nextPin = nextDigits.join("");
+    setPin(nextPin);
+    if (pinError) setPinError("");
+
+    if (digit && index < APP_PIN.length - 1) {
+      pinInputRefs.current[index + 1]?.focus();
+    }
+    if (nextPin.length === APP_PIN.length && !nextPin.includes(" ")) {
+      unlockApp(nextPin);
+    }
+  }
+
+  function pastePin(value: string) {
+    const nextPin = value.replace(/\D/g, "").slice(0, APP_PIN.length);
+    if (!nextPin) return;
+    setPin(nextPin);
+    setPinError("");
+    if (nextPin.length === APP_PIN.length) unlockApp(nextPin);
+    else pinInputRefs.current[nextPin.length]?.focus();
   }
 
   async function pasteInto(field: "message" | "guestName") {
@@ -460,31 +487,43 @@ export default function Home() {
         </Button>
         <section className="w-[min(100%,24rem)] bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,.04),0_16px_48px_rgba(0,0,0,.08)] dark:bg-zinc-900 sm:p-8" aria-labelledby="lock-title">
           <p className="text-[10px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Voucher studio</p>
-          <h1 id="lock-title" className="mt-2 text-2xl font-semibold tracking-[-.03em] text-zinc-950 dark:text-zinc-50">Enter access PIN</h1>
-          <p className="mt-2 text-sm leading-5 text-zinc-500 dark:text-zinc-400">Enter the four-digit PIN to open the gift voucher editor.</p>
-          <form className="mt-6 grid gap-4" onSubmit={unlockApp}>
+          <h1 id="lock-title" className="mt-2 text-2xl font-semibold tracking-[-.03em] text-zinc-950 dark:text-zinc-50">Enter access password</h1>
+          <p className="mt-2 text-sm leading-5 text-zinc-500 dark:text-zinc-400">Enter the four-digit password to open the gift voucher editor.</p>
+          <div className="mt-6 grid gap-4">
             <Field>
-              <FieldLabel htmlFor="app-pin">Four-digit PIN</FieldLabel>
-              <Input
-                id="app-pin"
-                type="password"
-                inputMode="numeric"
-                pattern="[0-9]{4}"
-                autoComplete="current-password"
-                maxLength={4}
-                value={pin}
-                aria-invalid={Boolean(pinError)}
-                aria-describedby={pinError ? "pin-error" : undefined}
-                autoFocus
-                onChange={(event) => {
-                  setPin(event.target.value.replace(/\D/g, "").slice(0, 4));
-                  if (pinError) setPinError("");
-                }}
-              />
+              <FieldLabel>Four-digit password</FieldLabel>
+              <div className="flex gap-3" role="group" aria-label="Four-digit password" aria-describedby={pinError ? "pin-error" : undefined}>
+                {Array.from({ length: APP_PIN.length }, (_, index) => (
+                  <Input
+                    key={index}
+                    ref={(element) => { pinInputRefs.current[index] = element; }}
+                    id={`app-password-${index + 1}`}
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]"
+                    autoComplete={index === 0 ? "current-password" : "off"}
+                    maxLength={1}
+                    value={pin[index] ?? ""}
+                    aria-label={`Password digit ${index + 1}`}
+                    aria-invalid={Boolean(pinError)}
+                    autoFocus={index === 0}
+                    className="h-14 w-12 text-center text-xl"
+                    onChange={(event) => updatePin(index, event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Backspace" && !pin[index] && index > 0) {
+                        pinInputRefs.current[index - 1]?.focus();
+                      }
+                    }}
+                    onPaste={(event) => {
+                      event.preventDefault();
+                      pastePin(event.clipboardData.getData("text"));
+                    }}
+                  />
+                ))}
+              </div>
               {pinError && <FieldDescription id="pin-error" className="text-destructive" aria-live="polite">{pinError}</FieldDescription>}
             </Field>
-            <Button type="submit" disabled={pin.length !== 4} className="w-full">Unlock editor</Button>
-          </form>
+          </div>
         </section>
       </main>
     );
