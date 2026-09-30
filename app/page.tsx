@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { Field, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -12,17 +11,15 @@ import { Calendar } from "@/components/ui/calendar";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { addDays, format, isValid, parse } from "date-fns";
-import { toJpeg, toPng } from "html-to-image";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import { VoucherPages } from "@/components/voucher/voucher-pages";
+import { initialVoucherContent as initialContent, type VoucherContent, type VoucherPageIndex } from "@/lib/voucher";
 
-const pages = ["Front", "Back"];
 const APP_PIN = "1947";
 const VOUCHER_STORAGE_KEY = "gift-voucher-content-v2";
 const DEFAULT_MESSAGE = "Wishing you both a lifetime of love, laughter, and beautiful moments together. May this little getaway be the beginning of countless wonderful journeys and cherished memories.";
@@ -30,31 +27,6 @@ const DEFAULT_MESSAGE = "Wishing you both a lifetime of love, laughter, and beau
 function toTitleCase(value: string) {
   return value.toLowerCase().replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
 }
-
-const initialContent = {
-  frontTitle: "GIFT\nVOUCHER",
-  message: "",
-  sender: "",
-  backTitle: "VOUCHER",
-  villaType: "PRIVATE POOL VILLA",
-  bbqDinner: false,
-  candlelightDinner: false,
-  flowerBed: false,
-  floatingBreakfast: false,
-  guestName: "",
-  voucherType: "dated",
-  checkInDate: "14 September 2026",
-  checkInTime: "AT 2:00 PM",
-  checkOutDate: "15 September 2026",
-  checkOutTime: "AT 11:00 AM",
-  redeemDate: "29 November 2026",
-  address: "Chembarathi Wayanad Boutique Resort, Close to Sunrise Valley View, Kadassery, Vaduvanchal, Kerala 673581",
-  phone: "+91 88 91 8888 18",
-  email: "hello@chembarathi.com",
-};
-
-type VoucherContent = typeof initialContent;
-type ExportQuality = "fast" | "balanced" | "high";
 
 function readSavedContent(): VoucherContent {
   if (typeof window === "undefined") return initialContent;
@@ -123,7 +95,7 @@ export default function Home() {
   const [content, setContent] = useState<VoucherContent>(readSavedContent);
   const [isDark, setIsDark] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("gift-voucher-theme") === "dark");
   const [exporting, setExporting] = useState<number | "all" | null>(null);
-  const [preview, setPreview] = useState<{ indices: number[]; images: string[] } | null>(null);
+  const [preview, setPreview] = useState<{ indices: VoucherPageIndex[]; file: File; objectUrl: string } | null>(null);
   const [pasteStatus, setPasteStatus] = useState("");
   const [inclusionsVerified, setInclusionsVerified] = useState(false);
   const [exportError, setExportError] = useState("");
@@ -134,7 +106,6 @@ export default function Home() {
   const [mobileShareFile, setMobileShareFile] = useState<File | null>(null);
   const [preparationProgress, setPreparationProgress] = useState(0);
   const [preparationRequested, setPreparationRequested] = useState(false);
-  const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [
     content.bbqDinner && "BBQ Dinner",
@@ -142,10 +113,8 @@ export default function Home() {
     content.flowerBed && "Flower bed decoration",
     content.floatingBreakfast && "Floating breakfast",
   ].filter((inclusion): inclusion is string => Boolean(inclusion));
-  const displayMessage = content.message.trim();
   const messageState = !content.message.trim() ? "Empty" : content.message === DEFAULT_MESSAGE ? "Autofilled" : "Custom";
   const mobileSteps = ["Message", "Voucher", "Stay", "Review"];
-  const mobileExportQuality: ExportQuality = "balanced";
 
   function changeMobileStep(nextStep: number) {
     if (nextStep > mobileStep) {
@@ -245,41 +214,6 @@ export default function Home() {
     }
   }
 
-  async function renderPage(index: number, quality?: ExportQuality, useLegacyRenderer = false) {
-    const canvas = canvasRefs.current[index];
-    if (!canvas) throw new Error("Voucher canvas is not available");
-    await document.fonts.ready;
-    await Promise.all(Array.from(canvas.querySelectorAll("img")).map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => {
-      image.addEventListener("load", () => resolve(), { once: true });
-      image.addEventListener("error", () => resolve(), { once: true });
-    })));
-    const canvasWidth = quality === "fast" ? 1200 : quality === "balanced" ? 1600 : 2100;
-    const useJpeg = quality === "fast" || quality === "balanced";
-    if (useLegacyRenderer) {
-      const renderedCanvas = await Promise.race([
-        html2canvas(canvas, {
-          backgroundColor: null,
-          logging: false,
-          scale: canvasWidth / Math.max(canvas.getBoundingClientRect().width, 1),
-          useCORS: true,
-          imageTimeout: 12_000,
-        }),
-        new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("Voucher rendering timed out")), 25_000)),
-      ]);
-      return renderedCanvas.toDataURL("image/jpeg", quality === "fast" ? 0.86 : 1);
-    }
-    const renderOptions = {
-      canvasWidth,
-      canvasHeight: Math.round(canvasWidth * 99 / 210),
-      pixelRatio: 1,
-      cacheBust: !quality,
-      style: { borderRadius: "0px" },
-    };
-    return useJpeg
-      ? toJpeg(canvas, { ...renderOptions, quality: quality === "fast" ? 0.88 : 1 })
-      : toPng(canvas, renderOptions);
-  }
-
   function validateVoucher() {
     const requiredFields: Array<[string, string]> = [
       [content.frontTitle, "front title"], [content.message, "message"],
@@ -303,7 +237,7 @@ export default function Home() {
 
   async function waitForVoucherAssets() {
     await document.fonts.ready;
-    const images = canvasRefs.current.flatMap((canvas) => canvas ? Array.from(canvas.querySelectorAll("img")) : []);
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".voucher-canvas img"));
     await Promise.all(images.map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => {
       image.addEventListener("load", () => resolve(), { once: true });
       image.addEventListener("error", () => resolve(), { once: true });
@@ -326,37 +260,37 @@ export default function Home() {
     }
   }
 
-  async function preparePreview(indices: number[]) {
+  async function requestVoucherPdf(indices: VoucherPageIndex[]) {
+    const response = await fetch("/api/voucher/pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, indices }),
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(result?.error || "The PDF could not be generated.");
+    }
+    return { blob: await response.blob(), fileName: createPdfFileName(indices) };
+  }
+
+  async function preparePreview(indices: VoucherPageIndex[]) {
     setDownloadNotice("");
     if (!validateVoucher()) return;
     const exportTarget = indices.length === 2 ? "all" : indices[0];
     setExporting(exportTarget);
     try {
-      const images = [];
-      for (const index of indices) images.push(await renderPage(index));
-      setPreview({ indices, images });
+      const { blob, fileName } = await requestVoucherPdf(indices);
+      const file = new File([blob], fileName, { type: "application/pdf" });
+      setPreview({ indices, file, objectUrl: URL.createObjectURL(file) });
     } catch (error) {
       console.error("Voucher PDF generation failed.", error);
-      const pageSuggestion = indices.length === 2 ? " You can also try downloading one page at a time." : "";
-      setExportError(`The PDF could not be prepared. Please wait for the voucher images to appear, then try again.${pageSuggestion}`);
+      setExportError(error instanceof Error ? error.message : "The PDF could not be prepared. Please try again.");
     } finally {
       setExporting(null);
     }
   }
 
-  function createGiftSizePdf(images: string[], indices: number[]) {
-    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99], compress: true });
-    images.forEach((image, imageIndex) => {
-      if (imageIndex > 0) pdf.addPage([210, 99], "landscape");
-      pdf.addImage(image, image.startsWith("data:image/jpeg") ? "JPEG" : "PNG", 0, 0, 210, 99, undefined, "FAST");
-    });
-    return {
-      blob: pdf.output("blob"),
-      fileName: createPdfFileName(indices),
-    };
-  }
-
-  function createPdfFileName(indices: number[]) {
+  function createPdfFileName(indices: VoucherPageIndex[]) {
     const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
     const pageSuffix = indices.length === 2 ? " - Front and Back" : indices[0] === 0 ? " - Front" : " - Back";
     return `${guestFileName}${pageSuffix} - ${format(new Date(), "yyyy-MM-dd_HH-mm-ss")}.pdf`;
@@ -364,35 +298,6 @@ export default function Home() {
 
   function isIphoneDevice() {
     return typeof navigator !== "undefined" && /iPhone|iPod/.test(navigator.userAgent);
-  }
-
-  async function createMobileGiftSizePdf(quality: ExportQuality, onProgress: (percent: number) => void) {
-    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99], compress: true });
-    const preferLegacyRenderer = isIphoneDevice();
-    for (const index of [0, 1]) {
-      onProgress(index === 0 ? 10 : 55);
-      let image: string;
-      try {
-        image = await renderPage(index, quality, preferLegacyRenderer);
-      } catch (primaryError) {
-        console.warn(`Primary renderer failed for voucher page ${index + 1}; retrying.`, primaryError);
-        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-        try {
-          image = await renderPage(index, quality, !preferLegacyRenderer);
-        } catch (secondaryError) {
-          console.warn(`Quality retry failed for voucher page ${index + 1}; using the recovery preset.`, secondaryError);
-          image = await renderPage(index, "fast", !preferLegacyRenderer);
-        }
-      }
-      if (index > 0) pdf.addPage([210, 99], "landscape");
-      pdf.addImage(image, image.startsWith("data:image/jpeg") ? "JPEG" : "PNG", 0, 0, 210, 99, undefined, "FAST");
-      onProgress(index === 0 ? 50 : 90);
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-    }
-    return {
-      blob: pdf.output("blob"),
-      fileName: createPdfFileName([0, 1]),
-    };
   }
 
   function downloadPdfBlob(blob: Blob, fileName: string) {
@@ -448,16 +353,22 @@ export default function Home() {
       setExportError("");
       setDownloadNotice("");
       setIsSavingPdf(true);
-      const { blob, fileName } = createGiftSizePdf(preview.images, preview.indices);
-      downloadPdfBlob(blob, fileName);
+      downloadPdfBlob(preview.file, preview.file.name);
       setDownloadNotice("PDF download requested. Check your browser downloads if it does not appear immediately.");
-      setPreview(null);
+      closePreview();
     } catch (error) {
       console.error("PDF download failed.", error);
       setExportError("The PDF could not be saved. Try one page at a time, or use Safari's Share menu and choose Save to Files.");
     } finally {
       setIsSavingPdf(false);
     }
+  }
+
+  function closePreview() {
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current.objectUrl);
+      return null;
+    });
   }
 
   useEffect(() => {
@@ -471,9 +382,8 @@ export default function Home() {
         setPreparationProgress(5);
       }
       try {
-        const { blob, fileName } = await createMobileGiftSizePdf(mobileExportQuality, (percent) => {
-          if (!cancelled) setPreparationProgress(percent);
-        });
+        if (!cancelled) setPreparationProgress(35);
+        const { blob, fileName } = await requestVoucherPdf([0, 1]);
         if (!cancelled) {
           setPreparationProgress(100);
           setMobileShareFile(new File([blob], fileName, { type: "application/pdf" }));
@@ -492,7 +402,7 @@ export default function Home() {
     return () => { cancelled = true; };
     // The PDF is prepared once when the final mobile step becomes visible.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mobileStep, mobileExportQuality, preparationRequested]);
+  }, [mobileStep, preparationRequested]);
 
   if (!isUnlocked) {
     return (
@@ -756,97 +666,7 @@ export default function Home() {
             </div>
           </div>
         )}
-        <div className="voucher-print-pages grid gap-6 sm:gap-8 lg:gap-10">
-        {pages.map((page, index) => (
-          <article key={page} tabIndex={0} aria-label={`${page} voucher preview. Scroll horizontally on smaller screens.`} className="voucher-print-page mx-0 overflow-x-auto px-0 pb-3 outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6 xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0">
-            <div ref={(node) => { canvasRefs.current[index] = node; }} className="voucher-canvas group relative aspect-[2100/990] w-full min-w-[840px] overflow-hidden rounded-[9px] bg-[linear-gradient(115deg,#141d1c_0%,#141f1e_50%,#121c1a_75%,#142421_100%)] shadow-[0_2px_3px_rgba(16,28,25,.1),0_14px_32px_rgba(16,28,25,.14)] [container-type:inline-size] after:pointer-events-none after:absolute after:inset-0 after:bg-[radial-gradient(circle_at_50%_40%,transparent_20%,rgba(3,10,8,.18)_100%)] after:content-[''] xl:min-w-0 xl:rounded-[clamp(10px,1.5vw,20px)] xl:shadow-[0_2px_4px_rgba(16,28,25,.12),0_24px_60px_rgba(16,28,25,.16)]">
-              <Image className="absolute top-[-24.04%] left-[67.667%] z-10 h-[90.202%] w-[48.619%] origin-center rotate-150 object-contain" src="/spiral.svg" alt="" width={1021} height={893} priority={index === 0} />
-              <Image className="absolute top-1/2 left-1/2 z-10 h-[90.202%] w-[48.619%] -translate-x-1/2 -translate-y-1/2 object-contain" src="/spiral.svg" alt="" width={1021} height={893} />
-              <Image className="absolute top-[10.101%] left-[30.952%] z-20 h-[8.081%] w-[3.81%]" src="/dot.svg" alt="" width={80} height={80} />
-              <Image className="absolute top-[20.202%] left-[28.571%] z-20 h-[3.03%] w-[1.429%]" src="/dot.svg" alt="" width={30} height={30} />
-
-              {index === 0 && (
-                <>
-                  <div className="absolute top-1/2 left-[7.619%] z-20 w-[49.524%] -translate-y-1/2 text-[#beb16b]">
-                    <p className="mb-[.8cqw] font-secondary text-[.65cqw] font-light tracking-[.24em]">A GIFT FOR YOU</p>
-                    <h3 className="m-0 whitespace-pre-line font-primary text-[6.65cqw] leading-[.86] font-light tracking-[-.03em]">{content.frontTitle}</h3>
-
-                    <div className="mt-[3.3cqw] h-px w-[38cqw] bg-[#beb16b]/40" />
-
-                    <div className="mt-[1.8cqw] w-[83%]">
-                      <p className="font-secondary text-[.62cqw] font-light tracking-[.22em]">MESSAGE</p>
-                      <p className="mt-[.9cqw] whitespace-pre-line font-primary text-[1.05cqw] leading-[1.5] font-light tracking-[.005em]">{displayMessage}</p>
-                      <p className="mt-[1.35cqw] font-secondary text-[.7cqw] font-medium tracking-[.12em]">{content.sender}</p>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {index === 1 && (
-                <div className="absolute inset-x-[7.619%] top-[11.5%] bottom-[9%] z-20 flex flex-col text-[#beb16b]">
-                  <div className="flex items-end justify-between">
-                    <div>
-                      <p className="mb-[.7cqw] font-secondary text-[.62cqw] font-light tracking-[.24em]">CHEMBARATHI · WAYANAD</p>
-                      <h3 className="m-0 font-primary text-[5.15cqw] leading-[.82] font-light tracking-[-.035em]">{content.backTitle}</h3>
-                    </div>
-                    <p className="ml-auto pb-[.3cqw] text-right font-secondary text-[.84cqw] font-medium tracking-[.1em] whitespace-nowrap">{content.villaType}</p>
-                  </div>
-
-                  <div className="mt-[2.4cqw] h-px w-full bg-[#beb16b]/40" />
-
-                  <div className={selectedInclusions.length ? "grid flex-1 grid-cols-[1fr_1px_1fr] items-center gap-[4.3cqw]" : "grid flex-1 grid-cols-1 items-center"}>
-                    {selectedInclusions.length > 0 && <div className="order-3">
-                      <p className="font-secondary text-[.65cqw] font-light tracking-[.22em]">DETAILS</p>
-                      <ul className="mt-[1cqw] grid gap-[.35cqw] font-primary text-[1.22cqw] leading-[1.3] font-light">
-                        {selectedInclusions.map((inclusion) => <li key={inclusion} className="flex items-baseline gap-[.65cqw]"><span aria-hidden="true" className="text-[.72em]">•</span><span>{inclusion}</span></li>)}
-                      </ul>
-                    </div>}
-
-                    {selectedInclusions.length > 0 && <div className="order-2 h-[10.5cqw] w-px bg-[#beb16b]/25" />}
-
-                    <div className={selectedInclusions.length ? "order-1" : "justify-self-start text-left"}>
-                      <p className="font-secondary text-[.65cqw] font-light tracking-[.22em]">NAME</p>
-                      <p className="mt-[.8cqw] font-primary text-[1.85cqw] leading-none font-light">{content.guestName}</p>
-
-                      {content.voucherType === "dated" ? (
-                      <div className="mt-[2.25cqw] grid grid-cols-2 gap-[2.2cqw]">
-                        <div>
-                          <p className="font-secondary text-[.58cqw] font-light tracking-[.2em]">CHECK-IN</p>
-                          <p className="mt-[.55cqw] font-primary text-[1.02cqw] leading-none font-light whitespace-nowrap">{content.checkInDate}</p>
-                          <p className="mt-[.55cqw] font-secondary text-[.58cqw] font-medium tracking-[.13em]">{content.checkInTime}</p>
-                        </div>
-                        <div>
-                          <p className="font-secondary text-[.58cqw] font-light tracking-[.2em]">CHECK-OUT</p>
-                          <p className="mt-[.55cqw] font-primary text-[1.02cqw] leading-none font-light whitespace-nowrap">{content.checkOutDate}</p>
-                          <p className="mt-[.55cqw] font-secondary text-[.58cqw] font-medium tracking-[.13em]">{content.checkOutTime}</p>
-                        </div>
-                      </div>
-                      ) : (
-                        <div className="mt-[3cqw]">
-                          <p className="font-secondary text-[.58cqw] font-light tracking-[.2em]">REDEEM BEFORE</p>
-                          <p className="mt-[.7cqw] font-primary text-[1.65cqw] leading-none font-light">{content.redeemDate}</p>
-                        </div>
-                      )}
-
-                    </div>
-                  </div>
-
-                  <div className="border-t border-[#beb16b]/40 pt-[1.25cqw]">
-                    <div className="grid grid-cols-[4.2cqw_1fr_auto] items-center gap-[1.6cqw]">
-                      <Image className="h-auto w-[4.2cqw] object-contain" src="/logo.svg" alt="" width={340} height={296} />
-                      <p className="font-primary text-[.9cqw] leading-[1.55] font-light">{content.address}</p>
-                      <p className="font-primary text-right text-[.8cqw] leading-[1.65] tracking-[.02em] whitespace-nowrap">{content.phone}<br />{content.email}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {index === 0 && <Image className="absolute top-1/2 left-[79.048%] z-20 h-[29.899%] w-[16.19%] -translate-y-1/2 object-contain" src="/logo.svg" alt="" width={340} height={296} />}
-
-            </div>
-          </article>
-        ))}
-        </div>
+        <VoucherPages content={content} interactivePreview />
         <div className="voucher-print-chrome sticky bottom-0 -mx-4 -mb-4 grid grid-cols-[auto_1fr] gap-2.5 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
           {mobileShareFile ? (
@@ -863,19 +683,15 @@ export default function Home() {
       </section>
       </div>
 
-      <Dialog open={preview !== null} onOpenChange={(open) => !open && setPreview(null)}>
+      <Dialog open={preview !== null} onOpenChange={(open) => !open && closePreview()}>
         <DialogContent className="max-h-[92dvh] w-[calc(100%-2rem)] max-w-none overflow-y-auto p-4 sm:max-w-none sm:p-5 lg:w-[min(1200px,calc(100%-3rem))]">
           <DialogHeader>
             <DialogTitle>PDF preview</DialogTitle>
             <DialogDescription>Review the selected voucher pages before downloading.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4" aria-label="Selected PDF pages">
-            {preview?.images.map((image, index) => (
-              <Image key={`${preview.indices[index]}-${image.length}`} src={image} alt={`${preview.indices[index] === 0 ? "Front" : "Back"} voucher preview`} width={1050} height={495} unoptimized className="h-auto w-full" />
-            ))}
-          </div>
+          {preview && <iframe src={preview.objectUrl} title="Generated voucher PDF preview" className="h-[65dvh] w-full border-0" />}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPreview(null)} disabled={isSavingPdf}>Cancel</Button>
+            <Button variant="outline" onClick={closePreview} disabled={isSavingPdf}>Cancel</Button>
             <Button onClick={savePreviewAsPdf} disabled={isSavingPdf}>{isSavingPdf ? "Preparing PDF…" : "Save PDF"}</Button>
           </DialogFooter>
         </DialogContent>
