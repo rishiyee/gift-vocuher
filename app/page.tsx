@@ -145,7 +145,7 @@ export default function Home() {
   const displayMessage = content.message.trim();
   const messageState = !content.message.trim() ? "Empty" : content.message === DEFAULT_MESSAGE ? "Autofilled" : "Custom";
   const mobileSteps = ["Message", "Voucher", "Stay", "Review"];
-  const mobileExportQuality: ExportQuality = isIphoneDevice() ? "fast" : "balanced";
+  const mobileExportQuality: ExportQuality = "balanced";
 
   function changeMobileStep(nextStep: number) {
     if (nextStep > mobileStep) {
@@ -266,7 +266,7 @@ export default function Home() {
         }),
         new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("Voucher rendering timed out")), 25_000)),
       ]);
-      return renderedCanvas.toDataURL("image/jpeg", quality === "fast" ? 0.86 : quality === "high" ? 0.95 : 0.92);
+      return renderedCanvas.toDataURL("image/jpeg", quality === "fast" ? 0.86 : 1);
     }
     const renderOptions = {
       canvasWidth,
@@ -276,7 +276,7 @@ export default function Home() {
       style: { borderRadius: "0px" },
     };
     return useJpeg
-      ? toJpeg(canvas, { ...renderOptions, quality: quality === "fast" ? 0.88 : 0.93 })
+      ? toJpeg(canvas, { ...renderOptions, quality: quality === "fast" ? 0.88 : 1 })
       : toPng(canvas, renderOptions);
   }
 
@@ -377,7 +377,12 @@ export default function Home() {
       } catch (primaryError) {
         console.warn(`Primary renderer failed for voucher page ${index + 1}; retrying.`, primaryError);
         await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-        image = await renderPage(index, "fast", !preferLegacyRenderer);
+        try {
+          image = await renderPage(index, quality, !preferLegacyRenderer);
+        } catch (secondaryError) {
+          console.warn(`Quality retry failed for voucher page ${index + 1}; using the recovery preset.`, secondaryError);
+          image = await renderPage(index, "fast", !preferLegacyRenderer);
+        }
       }
       if (index > 0) pdf.addPage([210, 99], "landscape");
       pdf.addImage(image, image.startsWith("data:image/jpeg") ? "JPEG" : "PNG", 0, 0, 210, 99, undefined, "FAST");
