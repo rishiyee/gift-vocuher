@@ -118,6 +118,7 @@ export default function Home() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pin, setPin] = useState<string[]>(() => Array(APP_PIN.length).fill(""));
   const [pinError, setPinError] = useState("");
+  const pinRef = useRef<string[]>(Array(APP_PIN.length).fill(""));
   const pinInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const [content, setContent] = useState<VoucherContent>(readSavedContent);
   const [isDark, setIsDark] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("gift-voucher-theme") === "dark");
@@ -144,8 +145,7 @@ export default function Home() {
   const displayMessage = content.message.trim();
   const messageState = !content.message.trim() ? "Empty" : content.message === DEFAULT_MESSAGE ? "Autofilled" : "Custom";
   const mobileSteps = ["Message", "Voucher", "Stay", "Review"];
-  const constrainedIphone = shouldUseConstrainedIphoneExport();
-  const mobileExportQuality: ExportQuality = constrainedIphone ? "fast" : "balanced";
+  const mobileExportQuality: ExportQuality = isIphoneDevice() ? "fast" : "balanced";
 
   function changeMobileStep(nextStep: number) {
     if (nextStep > mobileStep) {
@@ -193,20 +193,31 @@ export default function Home() {
       return;
     }
     setPinError("Incorrect password. Please try again.");
-    setPin(Array(APP_PIN.length).fill(""));
-    window.setTimeout(() => pinInputRefs.current[0]?.focus(), 0);
+    const emptyPin = Array<string>(APP_PIN.length).fill("");
+    pinRef.current = emptyPin;
+    setPin(emptyPin);
+    window.setTimeout(() => focusPinInput(0), 0);
     if ("vibrate" in navigator) navigator.vibrate([80, 50, 80]);
+  }
+
+  function focusPinInput(index: number) {
+    const input = pinInputRefs.current[index];
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    input.select();
   }
 
   function updatePin(index: number, value: string) {
     const digit = value.replace(/\D/g, "").slice(-1);
-    const nextPin = [...pin];
+    const nextPin = [...pinRef.current];
     nextPin[index] = digit;
+    pinRef.current = nextPin;
     setPin(nextPin);
     if (pinError) setPinError("");
 
     if (digit && index < APP_PIN.length - 1) {
-      pinInputRefs.current[index + 1]?.focus();
+      focusPinInput(index + 1);
+      window.requestAnimationFrame(() => focusPinInput(index + 1));
     }
     if (nextPin.every(Boolean)) {
       unlockApp(nextPin.join(""));
@@ -217,10 +228,11 @@ export default function Home() {
     const pastedPin = value.replace(/\D/g, "").slice(0, APP_PIN.length);
     if (!pastedPin) return;
     const nextPin = Array.from({ length: APP_PIN.length }, (_, index) => pastedPin[index] ?? "");
+    pinRef.current = nextPin;
     setPin(nextPin);
     setPinError("");
     if (pastedPin.length === APP_PIN.length) unlockApp(pastedPin);
-    else pinInputRefs.current[pastedPin.length]?.focus();
+    else focusPinInput(pastedPin.length);
   }
 
   async function pasteInto(field: "message" | "guestName") {
@@ -350,26 +362,23 @@ export default function Home() {
     return `${guestFileName}${pageSuffix} - ${format(new Date(), "yyyy-MM-dd_HH-mm-ss")}.pdf`;
   }
 
-  function shouldUseConstrainedIphoneExport() {
-    if (!isIphoneDevice()) return false;
-    const iosMajorVersion = Number(navigator.userAgent.match(/OS (\d+)_/)?.[1] ?? 0);
-    return (iosMajorVersion > 0 && iosMajorVersion <= 16)
-      || navigator.hardwareConcurrency <= 4
-      || window.screen.width <= 375;
-  }
-
   function isIphoneDevice() {
     return typeof navigator !== "undefined" && /iPhone|iPod/.test(navigator.userAgent);
   }
 
   async function createMobileGiftSizePdf(quality: ExportQuality, onProgress: (percent: number) => void) {
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: [210, 99], compress: true });
-    // Safari is more reliable with html2canvas than foreignObject-based rendering,
-    // including on current, larger iPhones.
-    const useLegacyRenderer = isIphoneDevice();
+    const preferLegacyRenderer = isIphoneDevice();
     for (const index of [0, 1]) {
       onProgress(index === 0 ? 10 : 55);
-      const image = await renderPage(index, quality, useLegacyRenderer);
+      let image: string;
+      try {
+        image = await renderPage(index, quality, preferLegacyRenderer);
+      } catch (primaryError) {
+        console.warn(`Primary renderer failed for voucher page ${index + 1}; retrying.`, primaryError);
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+        image = await renderPage(index, "fast", !preferLegacyRenderer);
+      }
       if (index > 0) pdf.addPage([210, 99], "landscape");
       pdf.addImage(image, image.startsWith("data:image/jpeg") ? "JPEG" : "PNG", 0, 0, 210, 99, undefined, "FAST");
       onProgress(index === 0 ? 50 : 90);
@@ -450,7 +459,8 @@ export default function Home() {
     if (mobileStep !== 3 || !preparationRequested) return;
     let cancelled = false;
     void (async () => {
-      await Promise.resolve();
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
+      if (cancelled) return;
       if (!cancelled) {
         setExporting("all");
         setPreparationProgress(5);
@@ -489,7 +499,13 @@ export default function Home() {
           <p className="text-[10px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Voucher studio</p>
           <h1 id="lock-title" className="mt-2 text-2xl font-semibold tracking-[-.03em] text-zinc-950 dark:text-zinc-50">Enter access password</h1>
           <p className="mt-2 text-sm leading-5 text-zinc-500 dark:text-zinc-400">Enter the four-digit password to open the gift voucher editor.</p>
-          <div className="mt-6 grid gap-4">
+          <form
+            className="mt-6 grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              unlockApp(pinRef.current.join(""));
+            }}
+          >
             <Field>
               <FieldLabel>Four-digit password</FieldLabel>
               <div className="flex gap-3" role="group" aria-label="Four-digit password" aria-describedby={pinError ? "pin-error" : undefined}>
@@ -508,10 +524,11 @@ export default function Home() {
                     aria-invalid={Boolean(pinError)}
                     autoFocus={index === 0}
                     className="h-14 w-12 text-center text-xl"
+                    onFocus={(event) => event.currentTarget.select()}
                     onChange={(event) => updatePin(index, event.target.value)}
                     onKeyDown={(event) => {
-                      if (event.key === "Backspace" && !pin[index] && index > 0) {
-                        pinInputRefs.current[index - 1]?.focus();
+                      if (event.key === "Backspace" && !pinRef.current[index] && index > 0) {
+                        focusPinInput(index - 1);
                       }
                     }}
                     onPaste={(event) => {
@@ -523,7 +540,8 @@ export default function Home() {
               </div>
               {pinError && <FieldDescription id="pin-error" className="text-destructive" aria-live="polite">{pinError}</FieldDescription>}
             </Field>
-          </div>
+            <Button type="submit" className="w-full" disabled={!pin.every(Boolean)}>Enter</Button>
+          </form>
         </section>
       </main>
     );
