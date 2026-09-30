@@ -43,5 +43,5 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## PDF deployment
 
-Voucher PDFs are rendered by Playwright and Chromium on the server. The included `Dockerfile` uses the matching Playwright image and contains the required browser runtime. Use that image, or install Chromium with `npm run browser:install` in another Node.js deployment environment.
+Voucher PDFs are rendered by Playwright and Chromium on the server. Vercel, Netlify, and AWS Lambda use the bundled `@sparticuz/chromium` runtime. The included `Dockerfile` uses the matching Playwright image. For local development outside Docker, install Chromium with `npm run browser:install`.
 "# gift-vocuher" 

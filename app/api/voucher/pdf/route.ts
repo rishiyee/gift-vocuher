@@ -1,8 +1,27 @@
-import { chromium } from "playwright";
+import serverlessChromium from "@sparticuz/chromium";
+import { chromium } from "playwright-core";
 import { normalizeVoucherContent, normalizeVoucherPageIndices } from "@/lib/voucher";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+async function launchChromium() {
+  const isServerless = Boolean(
+    process.env.VERCEL
+    || process.env.AWS_LAMBDA_FUNCTION_NAME
+    || process.env.NETLIFY,
+  );
+
+  if (isServerless) {
+    return chromium.launch({
+      args: serverlessChromium.args,
+      executablePath: await serverlessChromium.executablePath(),
+      headless: true,
+    });
+  }
+
+  return chromium.launch({ headless: true });
+}
 
 export async function POST(request: Request) {
   let browser;
@@ -13,7 +32,7 @@ export async function POST(request: Request) {
     if (!content || !indices) return Response.json({ error: "Invalid voucher data." }, { status: 400 });
 
     const printUrl = new URL("/voucher/print", request.url);
-    browser = await chromium.launch({ headless: true });
+    browser = await launchChromium();
     const page = await browser.newPage();
     await page.addInitScript((data) => {
       window.__VOUCHER_PRINT_DATA__ = data;
