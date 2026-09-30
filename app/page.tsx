@@ -267,8 +267,10 @@ export default function Home() {
       body: JSON.stringify({ content, indices }),
     });
     if (!response.ok) {
-      const result = await response.json().catch(() => null) as { error?: string } | null;
-      throw new Error(result?.error || "The PDF could not be generated.");
+      const result = await response.json().catch(() => null) as { error?: string; code?: string; requestId?: string } | null;
+      const reference = result?.requestId ? ` Reference: ${result.requestId}.` : "";
+      const code = result?.code ? ` (${result.code})` : "";
+      throw new Error(`${result?.error || "The PDF could not be generated."}${code}${reference}`);
     }
     return { blob: await response.blob(), fileName: createPdfFileName(indices) };
   }
@@ -393,7 +395,8 @@ export default function Home() {
         if (!cancelled) {
           setPreparationProgress(0);
           setPreparationRequested(false);
-          setExportError("The gift voucher could not be prepared. Please try again.");
+          const reason = error instanceof Error ? error.message : "The PDF service could not prepare the voucher.";
+          setExportError(`${reason} Use Print / Save PDF below, or try again.`);
         }
       } finally {
         if (!cancelled) setExporting(null);
@@ -675,9 +678,12 @@ export default function Home() {
               <Button onClick={saveMobileVoucher}>Save voucher</Button>
             </div>
           ) : (
-            <Button onClick={() => setPreparationRequested(true)} disabled={preparationRequested}>
-              {preparationRequested ? `Preparing ${preparationProgress}%…` : "Try again"}
-            </Button>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Button variant="outline" onClick={printVoucher} disabled={preparationRequested}>Print / Save PDF</Button>
+              <Button onClick={() => setPreparationRequested(true)} disabled={preparationRequested}>
+                {preparationRequested ? `Preparing ${preparationProgress}%…` : "Try again"}
+              </Button>
+            </div>
           )}
         </div>
       </section>
