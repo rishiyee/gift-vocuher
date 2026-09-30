@@ -132,7 +132,6 @@ export default function Home() {
   const [editorSections, setEditorSections] = useState<string[]>(["message"]);
   const [mobileShareFile, setMobileShareFile] = useState<File | null>(null);
   const [preparationProgress, setPreparationProgress] = useState(0);
-  const [exportQuality, setExportQuality] = useState<ExportQuality>("balanced");
   const [preparationRequested, setPreparationRequested] = useState(false);
   const canvasRefs = useRef<Array<HTMLDivElement | null>>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
@@ -146,9 +145,7 @@ export default function Home() {
   const messageState = !content.message.trim() ? "Empty" : content.message === DEFAULT_MESSAGE ? "Autofilled" : "Custom";
   const mobileSteps = ["Message", "Voucher", "Stay", "Review"];
   const constrainedIphone = shouldUseConstrainedIphoneExport();
-  const exportTimeEstimate = constrainedIphone
-    ? { fast: "8–15 sec", balanced: "15–25 sec", high: "30–50 sec" }[exportQuality]
-    : { fast: "4–8 sec", balanced: "8–15 sec", high: "15–30 sec" }[exportQuality];
+  const mobileExportQuality: ExportQuality = constrainedIphone ? "fast" : "balanced";
 
   function changeMobileStep(nextStep: number) {
     if (nextStep > mobileStep) {
@@ -173,7 +170,7 @@ export default function Home() {
     const boundedStep = Math.max(0, Math.min(mobileSteps.length - 1, nextStep));
     setMobileShareFile(null);
     setPreparationProgress(0);
-    setPreparationRequested(false);
+    setPreparationRequested(boundedStep === mobileSteps.length - 1);
     setMobileStep(boundedStep);
     setEditorSections(boundedStep === 0 ? ["message"] : boundedStep === 1 ? ["voucher"] : boundedStep === 2 ? ["stay"] : []);
     setExportError("");
@@ -396,33 +393,38 @@ export default function Home() {
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   }
 
-  function downloadMobileVoucher() {
+  function openMobilePdf() {
     if (!mobileShareFile) return;
-    downloadPdfBlob(mobileShareFile, mobileShareFile.name);
-    setDownloadNotice("Voucher download requested. On iPhone, find it in Safari's Downloads list or the Files app.");
+    const objectUrl = URL.createObjectURL(mobileShareFile);
+    const pdfWindow = window.open(objectUrl, "_blank");
+    if (pdfWindow) pdfWindow.opener = null;
+    else window.location.assign(objectUrl);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60_000);
+    setDownloadNotice("PDF opened. On iPhone, tap Share, then Save to Files.");
   }
 
-  async function shareGiftSizePdf() {
-    setDownloadNotice("");
+  async function saveMobileVoucher() {
     if (!mobileShareFile) return;
     try {
       const canShareFile = typeof navigator.share === "function"
         && typeof navigator.canShare === "function"
         && navigator.canShare({ files: [mobileShareFile] });
       if (canShareFile) {
+        setDownloadNotice("In the iPhone share sheet, choose Save to Files.");
         await navigator.share({ files: [mobileShareFile], title: "Gift voucher" });
-        setDownloadNotice("Gift voucher shared successfully.");
-      } else {
-        downloadPdfBlob(mobileShareFile, mobileShareFile.name);
-        setDownloadNotice("Sharing is unavailable, so the gift voucher was downloaded instead.");
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        setDownloadNotice("Sharing cancelled.");
+        setDownloadNotice("Voucher save or share completed.");
         return;
       }
-      console.error("Gift voucher sharing failed.", error);
-      setExportError("The gift voucher could not be shared. Please try again.");
+      if (isIphoneDevice()) {
+        openMobilePdf();
+        return;
+      }
+      downloadPdfBlob(mobileShareFile, mobileShareFile.name);
+      setDownloadNotice("Voucher download requested. Check your browser downloads.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      console.error("Voucher save failed.", error);
+      setExportError("The voucher could not be saved. Open the PDF, then use Share and Save to Files.");
     }
   }
 
@@ -454,7 +456,7 @@ export default function Home() {
         setPreparationProgress(5);
       }
       try {
-        const { blob, fileName } = await createMobileGiftSizePdf(exportQuality, (percent) => {
+        const { blob, fileName } = await createMobileGiftSizePdf(mobileExportQuality, (percent) => {
           if (!cancelled) setPreparationProgress(percent);
         });
         if (!cancelled) {
@@ -466,7 +468,7 @@ export default function Home() {
         if (!cancelled) {
           setPreparationProgress(0);
           setPreparationRequested(false);
-          setExportError("The gift voucher could not be prepared. Choose Fast quality and try again.");
+          setExportError("The gift voucher could not be prepared. Please try again.");
         }
       } finally {
         if (!cancelled) setExporting(null);
@@ -475,7 +477,7 @@ export default function Home() {
     return () => { cancelled = true; };
     // The PDF is prepared once when the final mobile step becomes visible.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mobileStep, exportQuality, preparationRequested]);
+  }, [mobileStep, mobileExportQuality, preparationRequested]);
 
   if (!isUnlocked) {
     return (
@@ -720,46 +722,17 @@ export default function Home() {
           </div>
           <Badge variant="secondary">2 pages</Badge>
         </div>
-        <div className="voucher-print-chrome grid gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-950/70 sm:hidden">
-          <div className="flex items-end justify-between gap-4">
-            <Field className="flex-1 gap-1.5">
-              <FieldLabel htmlFor="export-quality">Export quality</FieldLabel>
-              <Select
-                value={exportQuality}
-                disabled={exporting !== null}
-                onValueChange={(value) => {
-                  if (!value) return;
-                  setMobileShareFile(null);
-                  setPreparationProgress(0);
-                  setPreparationRequested(false);
-                  setExportQuality(value as ExportQuality);
-                }}
-              >
-                <SelectTrigger id="export-quality" className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fast">Fast</SelectItem>
-                  <SelectItem value="balanced">Balanced</SelectItem>
-                  <SelectItem value="high">High quality</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <div className="pb-1 text-right">
-              <p className="font-secondary text-[10px] font-semibold tracking-[.12em] text-zinc-500 uppercase">Estimated time</p>
-              <p className="mt-1 font-secondary text-sm font-semibold">{exportTimeEstimate}</p>
+        {preparationRequested && !mobileShareFile && (
+          <div className="voucher-print-chrome rounded-xl bg-zinc-50 p-3 dark:bg-zinc-950/70 sm:hidden" aria-live="polite">
+            <div className="mb-1.5 flex items-center justify-between font-secondary text-xs">
+              <span>Preparing voucher</span>
+              <span className="font-semibold tabular-nums">{preparationProgress}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+              <div className="h-full rounded-full bg-zinc-950 transition-[width] duration-500 dark:bg-zinc-50" style={{ width: `${preparationProgress}%` }} />
             </div>
           </div>
-          {preparationRequested && !mobileShareFile && (
-            <div aria-live="polite">
-              <div className="mb-1.5 flex items-center justify-between font-secondary text-xs">
-                <span>Preparing voucher</span>
-                <span className="font-semibold tabular-nums">{preparationProgress}%</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-                <div className="h-full rounded-full bg-zinc-950 transition-[width] duration-500 dark:bg-zinc-50" style={{ width: `${preparationProgress}%` }} />
-              </div>
-            </div>
-          )}
-        </div>
+        )}
         <div className="voucher-print-pages grid gap-6 sm:gap-8 lg:gap-10">
         {pages.map((page, index) => (
           <article key={page} tabIndex={0} aria-label={`${page} voucher preview. Scroll horizontally on smaller screens.`} className="voucher-print-page mx-0 overflow-x-auto px-0 pb-3 outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6 xl:mx-0 xl:overflow-visible xl:px-0 xl:pb-0">
@@ -855,12 +828,12 @@ export default function Home() {
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
           {mobileShareFile ? (
             <div className="grid grid-cols-2 gap-2.5">
-              <Button variant="outline" onClick={shareGiftSizePdf}>Share</Button>
-              <Button onClick={downloadMobileVoucher}>Download voucher</Button>
+              <Button variant="outline" onClick={openMobilePdf}>Open PDF</Button>
+              <Button onClick={saveMobileVoucher}>Save voucher</Button>
             </div>
           ) : (
             <Button onClick={() => setPreparationRequested(true)} disabled={preparationRequested}>
-              {preparationRequested ? `Preparing ${preparationProgress}%…` : "Prepare gift voucher"}
+              {preparationRequested ? `Preparing ${preparationProgress}%…` : "Try again"}
             </Button>
           )}
         </div>
