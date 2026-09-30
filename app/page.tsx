@@ -116,7 +116,7 @@ function DateEditorField({ id, label, value, onChange }: { id: string; label: st
 
 export default function Home() {
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [pin, setPin] = useState("");
+  const [pin, setPin] = useState<string[]>(() => Array(APP_PIN.length).fill(""));
   const [pinError, setPinError] = useState("");
   const pinInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const [content, setContent] = useState<VoucherContent>(readSavedContent);
@@ -196,34 +196,34 @@ export default function Home() {
       return;
     }
     setPinError("Incorrect password. Please try again.");
-    setPin("");
+    setPin(Array(APP_PIN.length).fill(""));
     window.setTimeout(() => pinInputRefs.current[0]?.focus(), 0);
     if ("vibrate" in navigator) navigator.vibrate([80, 50, 80]);
   }
 
   function updatePin(index: number, value: string) {
     const digit = value.replace(/\D/g, "").slice(-1);
-    const nextDigits = pin.padEnd(APP_PIN.length, " ").split("");
-    nextDigits[index] = digit || " ";
-    const nextPin = nextDigits.join("");
+    const nextPin = [...pin];
+    nextPin[index] = digit;
     setPin(nextPin);
     if (pinError) setPinError("");
 
     if (digit && index < APP_PIN.length - 1) {
       pinInputRefs.current[index + 1]?.focus();
     }
-    if (nextPin.length === APP_PIN.length && !nextPin.includes(" ")) {
-      unlockApp(nextPin);
+    if (nextPin.every(Boolean)) {
+      unlockApp(nextPin.join(""));
     }
   }
 
   function pastePin(value: string) {
-    const nextPin = value.replace(/\D/g, "").slice(0, APP_PIN.length);
-    if (!nextPin) return;
+    const pastedPin = value.replace(/\D/g, "").slice(0, APP_PIN.length);
+    if (!pastedPin) return;
+    const nextPin = Array.from({ length: APP_PIN.length }, (_, index) => pastedPin[index] ?? "");
     setPin(nextPin);
     setPinError("");
-    if (nextPin.length === APP_PIN.length) unlockApp(nextPin);
-    else pinInputRefs.current[nextPin.length]?.focus();
+    if (pastedPin.length === APP_PIN.length) unlockApp(pastedPin);
+    else pinInputRefs.current[pastedPin.length]?.focus();
   }
 
   async function pasteInto(field: "message" | "guestName") {
@@ -292,25 +292,26 @@ export default function Home() {
     return true;
   }
 
+  async function waitForVoucherAssets() {
+    await document.fonts.ready;
+    const images = canvasRefs.current.flatMap((canvas) => canvas ? Array.from(canvas.querySelectorAll("img")) : []);
+    await Promise.all(images.map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => {
+      image.addEventListener("load", () => resolve(), { once: true });
+      image.addEventListener("error", () => resolve(), { once: true });
+    })));
+  }
+
   async function printVoucher() {
     setDownloadNotice("");
     if (!validateVoucher()) return;
     setExporting("all");
     try {
-      const images = [await renderPage(0, "high"), await renderPage(1, "high")];
-      const { blob, fileName } = createGiftSizePdf(images, [0, 1]);
-      const objectUrl = URL.createObjectURL(blob);
-      const printWindow = window.open(objectUrl, "_blank", "noopener");
-      if (!printWindow) {
-        downloadPdfBlob(blob, fileName);
-        setDownloadNotice("Popup blocked. The high-quality gift-size PDF (210 × 99 mm) was downloaded instead.");
-      } else {
-        setDownloadNotice("High-quality gift-size PDF opened (210 × 99 mm). Print or save from that tab.");
-      }
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      await waitForVoucherAssets();
+      window.print();
+      setDownloadNotice("Print dialog opened. Choose Save as PDF, use 100% scale, and enable background graphics.");
     } catch (error) {
-      console.error("Voucher print preparation failed.", error);
-      setExportError("The high-quality print PDF could not be created. Use the standard PDF download instead.");
+      console.error("Browser printing failed.", error);
+      setExportError("The browser print dialog could not be opened. Use Download exact-size PDF instead.");
     } finally {
       setExporting(null);
     }
@@ -395,13 +396,10 @@ export default function Home() {
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   }
 
-  function openPdfForSaving(file: File) {
-    const objectUrl = URL.createObjectURL(file);
-    const pdfWindow = window.open(objectUrl, "_blank");
-    if (pdfWindow) pdfWindow.opener = null;
-    else window.location.assign(objectUrl);
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60_000);
-    setDownloadNotice("PDF opened. In Safari, tap Share, then choose Save to Files.");
+  function downloadMobileVoucher() {
+    if (!mobileShareFile) return;
+    downloadPdfBlob(mobileShareFile, mobileShareFile.name);
+    setDownloadNotice("Voucher download requested. On iPhone, find it in Safari's Downloads list or the Files app.");
   }
 
   async function shareGiftSizePdf() {
@@ -544,8 +542,8 @@ export default function Home() {
           <DropdownMenuTrigger render={<Button className="hidden sm:inline-flex" disabled={exporting !== null} />}>{exporting !== null ? "Preparing PDF..." : "Download PDF"}</DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => preparePreview([0, 1])}>Front &amp; back</DropdownMenuItem>
-              <DropdownMenuItem onClick={printVoucher}>High-quality print / PDF</DropdownMenuItem>
+              <DropdownMenuItem onClick={printVoucher}>Print / Save as PDF</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => preparePreview([0, 1])}>Download exact-size PDF</DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -857,8 +855,8 @@ export default function Home() {
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
           {mobileShareFile ? (
             <div className="grid grid-cols-2 gap-2.5">
-              <Button variant="outline" onClick={() => openPdfForSaving(mobileShareFile)}>Open PDF</Button>
-              <Button onClick={shareGiftSizePdf}>Share voucher</Button>
+              <Button variant="outline" onClick={shareGiftSizePdf}>Share</Button>
+              <Button onClick={downloadMobileVoucher}>Download voucher</Button>
             </div>
           ) : (
             <Button onClick={() => setPreparationRequested(true)} disabled={preparationRequested}>
