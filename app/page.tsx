@@ -10,9 +10,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { addDays, format, isValid, parse } from "date-fns";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar as CalendarIcon, Check, ClipboardPaste, Moon, PencilLine, Sparkles, Sun } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -95,12 +93,10 @@ export default function Home() {
   const [isDark, setIsDark] = useState(false);
   const [hasHydrated, setHasHydrated] = useState(false);
   const [exporting, setExporting] = useState<number | "all" | null>(null);
-  const [preview, setPreview] = useState<{ indices: VoucherPageIndex[]; file: File; objectUrl: string } | null>(null);
   const [pasteStatus, setPasteStatus] = useState("");
   const [inclusionsVerified, setInclusionsVerified] = useState(false);
   const [exportError, setExportError] = useState("");
   const [downloadNotice, setDownloadNotice] = useState("");
-  const [isSavingPdf, setIsSavingPdf] = useState(false);
   const [mobileStep, setMobileStep] = useState(0);
   const [hasStartedEditing, setHasStartedEditing] = useState(false);
   const [mobileShareFile, setMobileShareFile] = useState<File | null>(null);
@@ -317,31 +313,6 @@ export default function Home() {
     }
   }
 
-  async function waitForVoucherAssets() {
-    await document.fonts.ready;
-    const images = Array.from(document.querySelectorAll<HTMLImageElement>(".voucher-canvas img"));
-    await Promise.all(images.map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => {
-      image.addEventListener("load", () => resolve(), { once: true });
-      image.addEventListener("error", () => resolve(), { once: true });
-    })));
-  }
-
-  async function printVoucher() {
-    setDownloadNotice("");
-    if (!validateVoucher()) return;
-    setExporting("all");
-    try {
-      await waitForVoucherAssets();
-      window.print();
-      setDownloadNotice("Print dialog opened. Choose Save as PDF, use 100% scale, and enable background graphics.");
-    } catch (error) {
-      console.error("Browser printing failed.", error);
-      setExportError("The browser print dialog could not be opened. Use Download exact-size PDF instead.");
-    } finally {
-      setExporting(null);
-    }
-  }
-
   async function requestVoucherPdf(indices: VoucherPageIndex[]) {
     const response = await fetch("/api/voucher/pdf", {
       method: "POST",
@@ -357,18 +328,17 @@ export default function Home() {
     return { blob: await response.blob(), fileName: createPdfFileName(indices) };
   }
 
-  async function preparePreview(indices: VoucherPageIndex[]) {
+  async function downloadVoucherPdf() {
     setDownloadNotice("");
     if (!validateVoucher()) return;
-    const exportTarget = indices.length === 2 ? "all" : indices[0];
-    setExporting(exportTarget);
+    setExporting("all");
     try {
-      const { blob, fileName } = await requestVoucherPdf(indices);
-      const file = new File([blob], fileName, { type: "application/pdf" });
-      setPreview({ indices, file, objectUrl: URL.createObjectURL(file) });
+      const { blob, fileName } = await requestVoucherPdf([0, 1]);
+      downloadPdfBlob(blob, fileName);
+      setDownloadNotice("Voucher PDF downloaded.");
     } catch (error) {
       console.error("Voucher PDF generation failed.", error);
-      setExportError(error instanceof Error ? error.message : "The PDF could not be prepared. Please try again.");
+      setExportError(error instanceof Error ? error.message : "The PDF could not be downloaded. Please try again.");
     } finally {
       setExporting(null);
     }
@@ -383,20 +353,25 @@ export default function Home() {
 
   function createShareText() {
     const schedule = content.voucherType === "dated"
-      ? `Check-in: ${content.checkInDate} ${content.checkInTime}\nCheck-out: ${content.checkOutDate} ${content.checkOutTime}`
-      : `Redeem before: ${content.redeemDate}`;
-    return [
-      "Gift voucher",
-      `Guest: ${content.guestName}`,
-      `Voucher number: ${content.voucherNumber}`,
+      ? [`Check-in: ${content.checkInDate} ${content.checkInTime}`, `Check-out: ${content.checkOutDate} ${content.checkOutTime}`]
+      : [`Valid until: ${content.redeemDate}`];
+    const lines = [
+      "CHEMBARATHI WAYANAD",
+      "Gift Voucher",
+      "",
+      `Dear ${content.guestName},`,
+      "",
+      "Please find your gift voucher attached. We look forward to welcoming you for a memorable stay.",
+      "",
+      `Voucher no.: ${content.voucherNumber}`,
       `Cottage: ${content.villaType}`,
       schedule,
-      `Inclusions: ${selectedInclusions.length ? selectedInclusions.join(", ") : "None"}`,
-    ].join("\n");
-  }
-
-  function isIphoneDevice() {
-    return typeof navigator !== "undefined" && /iPhone|iPod/.test(navigator.userAgent);
+      selectedInclusions.length ? `Inclusions: ${selectedInclusions.join(", ")}` : "",
+      "",
+      content.message.trim(),
+      content.sender.trim() ? `With warm wishes,\n${content.sender.trim()}` : "Warm regards,\nChembarathi Wayanad",
+    ];
+    return lines.flat().filter((line, index, all) => line || all[index - 1]).join("\n");
   }
 
   function downloadPdfBlob(blob: Blob, fileName: string) {
@@ -411,63 +386,25 @@ export default function Home() {
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   }
 
-  function openMobilePdf() {
-    if (!mobileShareFile) return;
-    const objectUrl = URL.createObjectURL(mobileShareFile);
-    const pdfWindow = window.open(objectUrl, "_blank");
-    if (pdfWindow) pdfWindow.opener = null;
-    else window.location.assign(objectUrl);
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5 * 60_000);
-    setDownloadNotice("PDF opened. On iPhone, tap Share, then Save to Files.");
-  }
-
-  async function saveMobileVoucher() {
+  async function shareMobileVoucher() {
     if (!mobileShareFile) return;
     try {
       const canShareFile = typeof navigator.share === "function"
         && typeof navigator.canShare === "function"
         && navigator.canShare({ files: [mobileShareFile] });
       if (canShareFile) {
-        setDownloadNotice("In the iPhone share sheet, choose Save to Files.");
-        await navigator.share({ files: [mobileShareFile], title: `Gift voucher for ${content.guestName}`, text: createShareText() });
-        setDownloadNotice("Voucher save or share completed.");
-        return;
-      }
-      if (isIphoneDevice()) {
-        openMobilePdf();
+        setDownloadNotice("Opening the share sheet…");
+        await navigator.share({ files: [mobileShareFile], title: `Gift voucher for ${content.guestName} · ${content.voucherNumber}`, text: createShareText() });
+        setDownloadNotice("Voucher shared.");
         return;
       }
       downloadPdfBlob(mobileShareFile, mobileShareFile.name);
-      setDownloadNotice("Voucher download requested. Check your browser downloads.");
+      setDownloadNotice("Sharing is unavailable in this browser, so the PDF was downloaded instead.");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       console.error("Voucher save failed.", error);
-      setExportError("The voucher could not be saved. Open the PDF, then use Share and Save to Files.");
+      setExportError("The voucher could not be shared. Please try again.");
     }
-  }
-
-  async function savePreviewAsPdf() {
-    if (!preview) return;
-    try {
-      setExportError("");
-      setDownloadNotice("");
-      setIsSavingPdf(true);
-      downloadPdfBlob(preview.file, preview.file.name);
-      setDownloadNotice("PDF download requested. Check your browser downloads if it does not appear immediately.");
-      closePreview();
-    } catch (error) {
-      console.error("PDF download failed.", error);
-      setExportError("The PDF could not be saved. Try one page at a time, or use Safari's Share menu and choose Save to Files.");
-    } finally {
-      setIsSavingPdf(false);
-    }
-  }
-
-  function closePreview() {
-    setPreview((current) => {
-      if (current) URL.revokeObjectURL(current.objectUrl);
-      return null;
-    });
   }
 
   useEffect(() => {
@@ -493,7 +430,7 @@ export default function Home() {
           setPreparationProgress(0);
           setPreparationRequested(false);
           const reason = error instanceof Error ? error.message : "The PDF service could not prepare the voucher.";
-          setExportError(`${reason} Use Print / Save PDF below, or try again.`);
+          setExportError(`${reason} Please try preparing the voucher again.`);
         }
       } finally {
         if (!cancelled) setExporting(null);
@@ -617,15 +554,7 @@ export default function Home() {
         <Button variant="outline" size="icon" onClick={() => setIsDark((current) => !current)} aria-label={isDark ? "Use light mode" : "Use dark mode"}>
           {isDark ? <Sun /> : <Moon />}
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button className="hidden sm:inline-flex" disabled={exporting !== null} />}>{exporting !== null ? "Preparing PDF..." : "Download PDF"}</DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuGroup>
-              <DropdownMenuItem onClick={printVoucher}>Print / Save as PDF</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => preparePreview([0, 1])}>Download exact-size PDF</DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button className="hidden sm:inline-flex" onClick={downloadVoucherPdf} disabled={exporting !== null}>{exporting !== null ? "Preparing PDF…" : "Download PDF"}</Button>
         </div>
       </header>
       {exportError && <div role="alert" className="no-print mx-4 mt-3 rounded-xl bg-destructive/10 px-4 py-3 font-secondary text-sm leading-5 text-destructive sm:mx-0 sm:mt-4 sm:rounded-none">{exportError}</div>}
@@ -789,7 +718,7 @@ export default function Home() {
         <div className="voucher-print-chrome flex items-center justify-between gap-4">
           <div>
             <h2 className="font-secondary text-sm font-semibold text-zinc-900 dark:text-zinc-100">Canvas preview</h2>
-            <p className="mt-0.5 font-secondary text-xs text-zinc-500 dark:text-zinc-400 xl:hidden">Swipe horizontally to inspect the full voucher.</p>
+            <p className="mt-0.5 font-secondary text-xs text-zinc-500 dark:text-zinc-400">Review both sides before saving.</p>
           </div>
           <Badge variant="secondary">2 pages</Badge>
         </div>
@@ -808,35 +737,16 @@ export default function Home() {
         <div className="voucher-print-chrome sticky bottom-0 -mx-4 -mb-4 grid grid-cols-[auto_1fr] gap-2.5 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
           {mobileShareFile ? (
-            <div className="grid grid-cols-2 gap-2.5">
-              <Button variant="outline" onClick={openMobilePdf}>Open PDF</Button>
-              <Button onClick={saveMobileVoucher}>Save voucher</Button>
-            </div>
+            <Button onClick={shareMobileVoucher}>Share PDF</Button>
           ) : (
-            <div className="grid grid-cols-2 gap-2.5">
-              <Button variant="outline" onClick={printVoucher} disabled={preparationRequested}>Print / Save PDF</Button>
-              <Button onClick={() => setPreparationRequested(true)} disabled={preparationRequested}>
-                {preparationRequested ? `Preparing ${preparationProgress}%…` : "Try again"}
-              </Button>
-            </div>
+            <Button onClick={() => setPreparationRequested(true)} disabled={preparationRequested}>
+              {preparationRequested ? `Preparing PDF ${preparationProgress}%…` : "Prepare PDF"}
+            </Button>
           )}
         </div>
       </section>
       </div>
 
-      <Dialog open={preview !== null} onOpenChange={(open) => !open && closePreview()}>
-        <DialogContent className="max-h-[92dvh] w-[calc(100%-2rem)] max-w-none overflow-y-auto p-4 sm:max-w-none sm:p-5 lg:w-[min(1200px,calc(100%-3rem))]">
-          <DialogHeader>
-            <DialogTitle>PDF preview</DialogTitle>
-            <DialogDescription>Review the selected voucher pages before downloading.</DialogDescription>
-          </DialogHeader>
-          {preview && <iframe src={preview.objectUrl} title="Generated voucher PDF preview" className="h-[65dvh] w-full border-0" />}
-          <DialogFooter>
-            <Button variant="outline" onClick={closePreview} disabled={isSavingPdf}>Cancel</Button>
-            <Button onClick={savePreviewAsPdf} disabled={isSavingPdf}>{isSavingPdf ? "Preparing PDF…" : "Save PDF"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       <p className="sr-only" aria-live="polite">{pasteStatus}</p>
     </main>
   );
