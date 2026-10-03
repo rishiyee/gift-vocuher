@@ -12,13 +12,13 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { addDays, format, isValid, parse } from "date-fns";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Calendar as CalendarIcon, Moon, Sun } from "lucide-react";
+import { Calendar as CalendarIcon, Check, ClipboardPaste, Moon, Sparkles, Sun } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { VoucherPages } from "@/components/voucher/voucher-pages";
-import { initialVoucherContent as initialContent, type VoucherContent, type VoucherPageIndex } from "@/lib/voucher";
+import { initialVoucherContent as initialContent, type AiVoucherDraft, type VoucherContent, type VoucherPageIndex } from "@/lib/voucher";
 
 const APP_PIN = "1947";
 const VOUCHER_STORAGE_KEY = "gift-voucher-content-v2";
@@ -106,6 +106,10 @@ export default function Home() {
   const [mobileShareFile, setMobileShareFile] = useState<File | null>(null);
   const [preparationProgress, setPreparationProgress] = useState(0);
   const [preparationRequested, setPreparationRequested] = useState(false);
+  const [voucherSource, setVoucherSource] = useState("");
+  const [isDrafting, setIsDrafting] = useState(false);
+  const [draftNotice, setDraftNotice] = useState("");
+  const [draftNotes, setDraftNotes] = useState<string[]>([]);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [
     content.bbqDinner && "BBQ Dinner",
@@ -233,6 +237,67 @@ export default function Home() {
     }
     setExportError("");
     return true;
+  }
+
+  async function pasteVoucherDetails() {
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      setVoucherSource(clipboardText.trim());
+      setDraftNotice("Booking details pasted. Review them, then create the draft.");
+    } catch {
+      setDraftNotice("Clipboard access was not available. Paste into the box with your browser's paste command.");
+    }
+  }
+
+  async function draftVoucherWithAi() {
+    if (voucherSource.trim().length < 10) {
+      setExportError("Paste the booking or voucher details first.");
+      return;
+    }
+
+    setIsDrafting(true);
+    setExportError("");
+    setDraftNotice("");
+    setDraftNotes([]);
+    try {
+      const response = await fetch("/api/voucher/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: voucherSource }),
+      });
+      const result = await response.json().catch(() => null) as { draft?: AiVoucherDraft; error?: string; requestId?: string } | null;
+      if (!response.ok || !result?.draft) {
+        const reference = result?.requestId ? ` Reference: ${result.requestId}.` : "";
+        throw new Error(`${result?.error || "The voucher could not be drafted."}${reference}`);
+      }
+
+      const draft = result.draft;
+      setContent((current) => ({
+        ...current,
+        message: draft.message,
+        sender: draft.sender,
+        guestName: draft.guestName,
+        villaType: draft.villaType,
+        voucherType: draft.voucherType,
+        checkInDate: draft.checkInDate || current.checkInDate,
+        checkInTime: draft.checkInTime || current.checkInTime,
+        checkOutDate: draft.checkOutDate || current.checkOutDate,
+        checkOutTime: draft.checkOutTime || current.checkOutTime,
+        redeemDate: draft.redeemDate || current.redeemDate,
+        bbqDinner: draft.bbqDinner,
+        candlelightDinner: draft.candlelightDinner,
+        flowerBed: draft.flowerBed,
+        floatingBreakfast: draft.floatingBreakfast,
+      }));
+      setInclusionsVerified(false);
+      setDraftNotes(draft.notes);
+      setDraftNotice(`Draft ready for ${draft.guestName || "your guest"}. Fine-tune anything below, then review the voucher.`);
+      setEditorSections(["message", "voucher", "stay"]);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "The voucher could not be drafted. Please try again.");
+    } finally {
+      setIsDrafting(false);
+    }
   }
 
   async function waitForVoucherAssets() {
@@ -511,6 +576,54 @@ export default function Home() {
           <p className="mt-1.5 font-secondary text-sm leading-5 text-zinc-500 dark:text-zinc-400 sm:mt-2"><span className="sm:hidden">Complete this step, then continue to build your voucher.</span><span className="hidden sm:inline">Update the recipient and stay details. Every change appears on the canvas instantly.</span></p>
         </div>
         <div className="bg-zinc-50/70 px-3 pb-3 pt-px dark:bg-zinc-950/60 sm:px-5 sm:pb-5 sm:pt-0">
+        <div className={`${mobileStep === 0 ? "block" : "hidden"} relative mt-3 overflow-hidden rounded-xl border border-amber-200/80 bg-[linear-gradient(145deg,rgba(255,251,235,.96),rgba(254,243,199,.66))] p-4 shadow-xs dark:border-amber-900/60 dark:bg-[linear-gradient(145deg,rgba(69,26,3,.34),rgba(24,24,27,.85))] sm:mt-4 sm:block`}>
+          {isDrafting && <span aria-hidden="true" className="ai-draft-sheen absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/55 to-transparent dark:via-amber-200/10" />}
+          <div className="relative flex items-start gap-3">
+            <span className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-200/80 text-amber-950 dark:bg-amber-900/70 dark:text-amber-100 ${isDrafting ? "ai-sparkle" : ""}`}><Sparkles className="size-4" /></span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">Create with AI</p>
+                <Badge variant="secondary">Primary</Badge>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-zinc-600 dark:text-zinc-400">Paste the full booking confirmation. AI will extract only the guest-facing voucher details.</p>
+            </div>
+          </div>
+          <Textarea
+            className="relative mt-3 max-h-56 min-h-32 bg-white/90 dark:bg-zinc-950/90"
+            value={voucherSource}
+            placeholder="Paste booking confirmation or voucher details here…"
+            aria-label="Booking or voucher details"
+            disabled={isDrafting}
+            onChange={(event) => setVoucherSource(event.target.value)}
+          />
+          {isDrafting ? (
+            <div className="relative mt-3 grid grid-cols-3 gap-2" role="status" aria-label="Creating voucher draft">
+              {["Reading details", "Shaping voucher", "Preparing draft"].map((label, index) => (
+                <div key={label} className="rounded-lg border border-amber-200/70 bg-white/70 px-2 py-2 text-center dark:border-amber-900/50 dark:bg-zinc-950/60">
+                  <span className="ai-stage-dot mx-auto mb-1.5 block size-1.5 rounded-full bg-amber-600" style={{ animationDelay: `${index * 650}ms` }} />
+                  <span className="text-[10px] font-medium leading-3 text-zinc-600 dark:text-zinc-300">{label}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="relative mt-3 grid grid-cols-[auto_1fr] gap-2">
+              <Button type="button" variant="outline" onClick={pasteVoucherDetails}><ClipboardPaste />Paste</Button>
+              <Button type="button" onClick={draftVoucherWithAi} disabled={voucherSource.trim().length < 10}><Sparkles />Create voucher draft</Button>
+            </div>
+          )}
+          {draftNotice && <p role="status" className="relative mt-3 flex items-start gap-2 text-xs leading-5 text-emerald-700 dark:text-emerald-400"><Check className="mt-0.5 size-3.5 shrink-0" />{draftNotice}</p>}
+          {draftNotes.length > 0 && (
+            <ul className="relative mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-amber-800 dark:text-amber-300">
+              {draftNotes.map((note) => <li key={note}>{note}</li>)}
+            </ul>
+          )}
+          <p className="relative mt-2 text-[11px] leading-4 text-zinc-500">Payment, bank, UTR, phone, and policy details stay out of the voucher. Always confirm the extracted dates and inclusions.</p>
+        </div>
+        <div className={`${mobileStep === 0 ? "flex" : "hidden"} mt-4 items-center gap-3 sm:flex`}>
+          <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+          <p className="text-[10px] font-semibold tracking-[.14em] text-zinc-500 uppercase">Fine-tune manually</p>
+          <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+        </div>
         <Accordion value={editorSections} onValueChange={setEditorSections}>
           <div className={`${mobileStep === 0 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 shadow-xs dark:bg-zinc-900 sm:mt-4 sm:block sm:px-3 sm:transition-shadow sm:hover:shadow-sm`}>
           <AccordionItem value="message">
@@ -609,7 +722,7 @@ export default function Home() {
               </Field>
               <Field>
                 <FieldLabel>Voucher schedule</FieldLabel>
-                <RadioGroup defaultValue={initialContent.voucherType} onValueChange={(value) => update("voucherType")(value)}>
+                <RadioGroup value={content.voucherType} onValueChange={(value) => update("voucherType")(value)}>
                   <Field orientation="horizontal">
                     <RadioGroupItem id="dated-voucher" value="dated" />
                     <FieldLabel htmlFor="dated-voucher">Specific dates</FieldLabel>

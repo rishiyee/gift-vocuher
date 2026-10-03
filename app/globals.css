@@ -2,6 +2,29 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+@keyframes ai-draft-sheen {
+  from { transform: translateX(0); }
+  to { transform: translateX(300%); }
+}
+
+@keyframes ai-sparkle {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(8deg) scale(1.08); }
+}
+
+@keyframes ai-stage-dot {
+  0%, 55%, 100% { opacity: .28; transform: scale(.75); }
+  20%, 40% { opacity: 1; transform: scale(1.25); }
+}
+
+.ai-draft-sheen { animation: ai-draft-sheen 1.8s ease-in-out infinite; }
+.ai-sparkle { animation: ai-sparkle 1.1s ease-in-out infinite; }
+.ai-stage-dot { animation: ai-stage-dot 2s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-draft-sheen, .ai-sparkle, .ai-stage-dot { animation: none; }
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @font-face { font-family: "Canela Trial"; src: url("/fonts/CANELA-THIN-TRIAL.OTF") format("opentype"); font-style: normal; font-weight: 100; font-display: swap; }

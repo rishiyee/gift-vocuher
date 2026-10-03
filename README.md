@@ -16,6 +16,20 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## AI voucher drafting
+
+The editor can turn pasted booking confirmations into an editable voucher draft with Gemini Flash. Add the API key to `.env.local` (never expose it with a `NEXT_PUBLIC_` prefix):
+
+```bash
+GEMINI_API_KEY=your_api_key
+# Optional; defaults to the stable Gemini Flash model below
+GEMINI_MODEL=gemini-3.8-flash
+# Optional failover used when the preferred model is busy or rate-limited
+GEMINI_FALLBACK_MODEL=gemini-3.6-flash
+```
+
+Restart the development server after changing environment variables. The source text is sent to the Gemini Interactions API with storage disabled, and payment details are explicitly excluded from the generated voucher copy. If the preferred Flash model is temporarily busy or rate-limited, the server automatically retries with another Gemini Flash model.
+
 Install the Chromium build used for server-side PDF generation once after installing dependencies:
 
 ```bash

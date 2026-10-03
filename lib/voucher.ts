@@ -20,6 +20,24 @@ export type VoucherContent = {
   email: string;
 };
 
+export type AiVoucherDraft = {
+  message: string;
+  sender: string;
+  guestName: string;
+  villaType: string;
+  voucherType: "dated" | "open";
+  checkInDate: string;
+  checkInTime: string;
+  checkOutDate: string;
+  checkOutTime: string;
+  redeemDate: string;
+  bbqDinner: boolean;
+  candlelightDinner: boolean;
+  flowerBed: boolean;
+  floatingBreakfast: boolean;
+  notes: string[];
+};
+
 export const initialVoucherContent: VoucherContent = {
   frontTitle: "GIFT\nVOUCHER",
   message: "",
@@ -65,4 +83,31 @@ export function normalizeVoucherPageIndices(value: unknown): VoucherPageIndex[] 
   const indices = [...new Set(value)];
   if (indices.some((index) => index !== 0 && index !== 1)) return null;
   return indices as VoucherPageIndex[];
+}
+
+const allowedVillaTypes = new Set([
+  "DELUXE COTTAGE WITH FOREST VIEW",
+  "DELUXE COTTAGE WITH LAWN VIEW",
+  "HONEYMOON SUITE",
+  "PREMIUM COTTAGE WITH MOUNTAIN VIEW",
+  "PREMIUM COTTAGE WITH POOL VIEW AND MOUNTAIN VIEW",
+  "PRIVATE POOL VILLA",
+]);
+
+export function normalizeAiVoucherDraft(value: unknown): AiVoucherDraft | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  const stringFields = [
+    "message", "sender", "guestName", "villaType", "voucherType", "checkInDate",
+    "checkInTime", "checkOutDate", "checkOutTime", "redeemDate",
+  ] as const;
+  const booleanFields = ["bbqDinner", "candlelightDinner", "flowerBed", "floatingBreakfast"] as const;
+
+  if (stringFields.some((key) => typeof candidate[key] !== "string" || (candidate[key] as string).length > 1_000)) return null;
+  if (booleanFields.some((key) => typeof candidate[key] !== "boolean")) return null;
+  if (candidate.voucherType !== "dated" && candidate.voucherType !== "open") return null;
+  if (!allowedVillaTypes.has(candidate.villaType as string)) return null;
+  if (!Array.isArray(candidate.notes) || candidate.notes.length > 8 || candidate.notes.some((note) => typeof note !== "string" || note.length > 300)) return null;
+
+  return candidate as AiVoucherDraft;
 }
