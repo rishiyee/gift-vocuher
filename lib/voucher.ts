@@ -3,6 +3,7 @@ export type VoucherContent = {
   message: string;
   sender: string;
   backTitle: string;
+  voucherNumber: string;
   villaType: string;
   bbqDinner: boolean;
   candlelightDinner: boolean;
@@ -24,6 +25,7 @@ export type AiVoucherDraft = {
   message: string;
   sender: string;
   guestName: string;
+  voucherNumber: string;
   villaType: string;
   voucherType: "dated" | "open";
   checkInDate: string;
@@ -43,6 +45,7 @@ export const initialVoucherContent: VoucherContent = {
   message: "",
   sender: "",
   backTitle: "VOUCHER",
+  voucherNumber: "",
   villaType: "PRIVATE POOL VILLA",
   bbqDinner: false,
   candlelightDinner: false,
@@ -98,7 +101,7 @@ export function normalizeAiVoucherDraft(value: unknown): AiVoucherDraft | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   const stringFields = [
-    "message", "sender", "guestName", "villaType", "voucherType", "checkInDate",
+    "message", "sender", "guestName", "voucherNumber", "villaType", "voucherType", "checkInDate",
     "checkInTime", "checkOutDate", "checkOutTime", "redeemDate",
   ] as const;
   const booleanFields = ["bbqDinner", "candlelightDinner", "flowerBed", "floatingBreakfast"] as const;

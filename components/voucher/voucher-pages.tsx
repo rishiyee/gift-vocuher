@@ -50,9 +50,16 @@ export function VoucherPages({ content, indices = [0, 1], interactivePreview = f
                       <p className="mb-[.7cqw] font-secondary text-[.62cqw] font-light tracking-[.24em]">CHEMBARATHI · WAYANAD</p>
                       <h3 className="m-0 font-primary text-[5.15cqw] leading-[.82] font-light tracking-[-.035em]">{content.backTitle}</h3>
                     </div>
-                    <p className="ml-auto pb-[.3cqw] text-right font-secondary text-[.84cqw] font-medium tracking-[.1em] whitespace-nowrap">{content.villaType}</p>
+                    <div className="ml-auto pb-[.3cqw] text-right font-secondary">
+                      <p className="text-[.52cqw] font-light tracking-[.22em]">VOUCHER NO.</p>
+                      <p className="mt-[.18cqw] text-[.92cqw] font-semibold tracking-[.08em]">{content.voucherNumber || "—"}</p>
+                    </div>
                   </div>
                   <div className="mt-[2.4cqw] h-px w-full bg-[#beb16b]/40" />
+                  <div className="mt-[1.25cqw] rounded-[.65cqw] border border-[#beb16b]/35 bg-[#beb16b]/[.07] px-[1.4cqw] py-[.95cqw] text-center">
+                    <p className="font-secondary text-[.55cqw] font-light tracking-[.24em]">YOUR COTTAGE</p>
+                    <p className="mt-[.35cqw] font-primary text-[1.75cqw] leading-none font-medium tracking-[.015em]">{content.villaType}</p>
+                  </div>
                   <div className={selectedInclusions.length ? "grid flex-1 grid-cols-[1fr_1px_1fr] items-center gap-[4.3cqw]" : "grid flex-1 grid-cols-1 items-center"}>
                     {selectedInclusions.length > 0 && (
                       <div className="order-3">

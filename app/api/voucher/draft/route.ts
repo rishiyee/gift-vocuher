@@ -10,6 +10,7 @@ const voucherDraftSchema = {
     message: { type: "string", description: "A warm guest-facing gift message, at most 45 words." },
     sender: { type: "string", description: "Gift giver's name, or an empty string when not explicitly present." },
     guestName: { type: "string", description: "Guest or recipient name in title case." },
+    voucherNumber: { type: "string", description: "Voucher, booking, or confirmation number exactly as shown in the source, or an empty string when absent." },
     villaType: {
       type: "string",
       enum: [
@@ -38,7 +39,7 @@ const voucherDraftSchema = {
     },
   },
   required: [
-    "message", "sender", "guestName", "villaType", "voucherType", "checkInDate",
+    "message", "sender", "guestName", "voucherNumber", "villaType", "voucherType", "checkInDate",
     "checkInTime", "checkOutDate", "checkOutTime", "redeemDate", "bbqDinner",
     "candlelightDinner", "flowerBed", "floatingBreakfast", "notes",
   ],
@@ -120,6 +121,7 @@ export async function POST(request: Request) {
       "Extract a polished gift voucher draft from resort booking text.",
       "Use only facts explicitly present in the source. Correct obvious spelling mistakes and normalize dates/times.",
       "Map the cottage to the closest allowed villaType enum.",
+      "Copy the voucher, booking, or confirmation number into voucherNumber. Keep it out of the gift message.",
       "Treat an inclusion as true only when it is explicitly included; complimentary standard breakfast is not floating breakfast.",
       "Never place prices, balances, bank details, UTR IDs, phone numbers, policies, or booking reference numbers in the gift message.",
       "Do not use a resort employee's sign-off as the sender. If no gift giver is named, return an empty sender.",

@@ -5,14 +5,13 @@ import { Field, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@/co
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { addDays, format, isValid, parse } from "date-fns";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Calendar as CalendarIcon, Check, ClipboardPaste, Moon, Sparkles, Sun } from "lucide-react";
+import { Calendar as CalendarIcon, Check, ClipboardPaste, Moon, PencilLine, Sparkles, Sun } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -92,8 +91,9 @@ export default function Home() {
   const [pinError, setPinError] = useState("");
   const pinRef = useRef<string[]>(Array(APP_PIN.length).fill(""));
   const pinInputRefs = useRef<Array<HTMLInputElement | null>>([]);
-  const [content, setContent] = useState<VoucherContent>(readSavedContent);
-  const [isDark, setIsDark] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("gift-voucher-theme") === "dark");
+  const [content, setContent] = useState<VoucherContent>(initialContent);
+  const [isDark, setIsDark] = useState(false);
+  const [hasHydrated, setHasHydrated] = useState(false);
   const [exporting, setExporting] = useState<number | "all" | null>(null);
   const [preview, setPreview] = useState<{ indices: VoucherPageIndex[]; file: File; objectUrl: string } | null>(null);
   const [pasteStatus, setPasteStatus] = useState("");
@@ -102,7 +102,7 @@ export default function Home() {
   const [downloadNotice, setDownloadNotice] = useState("");
   const [isSavingPdf, setIsSavingPdf] = useState(false);
   const [mobileStep, setMobileStep] = useState(0);
-  const [editorSections, setEditorSections] = useState<string[]>(["message"]);
+  const [hasStartedEditing, setHasStartedEditing] = useState(false);
   const [mobileShareFile, setMobileShareFile] = useState<File | null>(null);
   const [preparationProgress, setPreparationProgress] = useState(0);
   const [preparationRequested, setPreparationRequested] = useState(false);
@@ -118,7 +118,7 @@ export default function Home() {
     content.floatingBreakfast && "Floating breakfast",
   ].filter((inclusion): inclusion is string => Boolean(inclusion));
   const messageState = !content.message.trim() ? "Empty" : content.message === DEFAULT_MESSAGE ? "Autofilled" : "Custom";
-  const mobileSteps = ["Message", "Voucher", "Stay", "Review"];
+  const mobileSteps = ["Message", "Cottage", "Guest & stay", "Review"];
 
   function changeMobileStep(nextStep: number) {
     if (nextStep > mobileStep) {
@@ -126,8 +126,8 @@ export default function Home() {
         setExportError("Add or autofill the gift message to continue.");
         return;
       }
-      if (mobileStep === 1 && (!content.villaType.trim() || !inclusionsVerified)) {
-        setExportError("Choose the villa and verify the inclusion selection to continue.");
+      if (mobileStep === 1 && (!content.voucherNumber.trim() || !content.villaType.trim() || !inclusionsVerified)) {
+        setExportError("Add the voucher number, choose the cottage, and verify the inclusions to continue.");
         return;
       }
       if (mobileStep === 2) {
@@ -145,19 +145,33 @@ export default function Home() {
     setPreparationProgress(0);
     setPreparationRequested(boundedStep === mobileSteps.length - 1);
     setMobileStep(boundedStep);
-    setEditorSections(boundedStep === 0 ? ["message"] : boundedStep === 1 ? ["voucher"] : boundedStep === 2 ? ["stay"] : []);
     setExportError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   useEffect(() => {
-    window.localStorage.setItem(VOUCHER_STORAGE_KEY, JSON.stringify(content));
-  }, [content]);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setContent(readSavedContent());
+      setIsDark(window.localStorage.getItem("gift-voucher-theme") === "dark");
+      setHasHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
+    if (!hasHydrated) return;
+    window.localStorage.setItem(VOUCHER_STORAGE_KEY, JSON.stringify(content));
+  }, [content, hasHydrated]);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
     document.documentElement.classList.toggle("dark", isDark);
     window.localStorage.setItem("gift-voucher-theme", isDark ? "dark" : "light");
-  }, [isDark]);
+  }, [hasHydrated, isDark]);
 
   function unlockApp(candidate: string) {
     if (candidate === APP_PIN) {
@@ -221,7 +235,7 @@ export default function Home() {
   function validateVoucher() {
     const requiredFields: Array<[string, string]> = [
       [content.frontTitle, "front title"], [content.message, "message"],
-      [content.backTitle, "voucher title"], [content.villaType, "villa type"], [content.guestName, "guest name"],
+      [content.backTitle, "voucher title"], [content.voucherNumber, "voucher number"], [content.villaType, "cottage"], [content.guestName, "guest name"],
       [content.address, "address"], [content.phone, "phone"], [content.email, "email"],
       ...(content.voucherType === "dated"
         ? [[content.checkInDate, "check-in date"], [content.checkInTime, "check-in time"], [content.checkOutDate, "check-out date"], [content.checkOutTime, "check-out time"]] as Array<[string, string]>
@@ -277,6 +291,7 @@ export default function Home() {
         message: draft.message,
         sender: draft.sender,
         guestName: draft.guestName,
+        voucherNumber: draft.voucherNumber,
         villaType: draft.villaType,
         voucherType: draft.voucherType,
         checkInDate: draft.checkInDate || current.checkInDate,
@@ -292,7 +307,9 @@ export default function Home() {
       setInclusionsVerified(false);
       setDraftNotes(draft.notes);
       setDraftNotice(`Draft ready for ${draft.guestName || "your guest"}. Fine-tune anything below, then review the voucher.`);
-      setEditorSections(["message", "voucher", "stay"]);
+      setHasStartedEditing(true);
+      setMobileStep(0);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
       setExportError(error instanceof Error ? error.message : "The voucher could not be drafted. Please try again.");
     } finally {
@@ -358,9 +375,24 @@ export default function Home() {
   }
 
   function createPdfFileName(indices: VoucherPageIndex[]) {
-    const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Gift Voucher";
+    const guestFileName = content.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Guest";
+    const voucherFileName = content.voucherNumber.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "No-number";
     const pageSuffix = indices.length === 2 ? " - Front and Back" : indices[0] === 0 ? " - Front" : " - Back";
-    return `${guestFileName}${pageSuffix} - ${format(new Date(), "yyyy-MM-dd_HH-mm-ss")}.pdf`;
+    return `${guestFileName} - ${voucherFileName}${pageSuffix} - ${format(new Date(), "yyyy-MM-dd_HH-mm-ss")}.pdf`;
+  }
+
+  function createShareText() {
+    const schedule = content.voucherType === "dated"
+      ? `Check-in: ${content.checkInDate} ${content.checkInTime}\nCheck-out: ${content.checkOutDate} ${content.checkOutTime}`
+      : `Redeem before: ${content.redeemDate}`;
+    return [
+      "Gift voucher",
+      `Guest: ${content.guestName}`,
+      `Voucher number: ${content.voucherNumber}`,
+      `Cottage: ${content.villaType}`,
+      schedule,
+      `Inclusions: ${selectedInclusions.length ? selectedInclusions.join(", ") : "None"}`,
+    ].join("\n");
   }
 
   function isIphoneDevice() {
@@ -397,7 +429,7 @@ export default function Home() {
         && navigator.canShare({ files: [mobileShareFile] });
       if (canShareFile) {
         setDownloadNotice("In the iPhone share sheet, choose Save to Files.");
-        await navigator.share({ files: [mobileShareFile], title: "Gift voucher" });
+        await navigator.share({ files: [mobileShareFile], title: `Gift voucher for ${content.guestName}`, text: createShareText() });
         setDownloadNotice("Voucher save or share completed.");
         return;
       }
@@ -530,6 +562,49 @@ export default function Home() {
     );
   }
 
+  if (!hasStartedEditing) {
+    return (
+      <main className="grid min-h-dvh place-items-center bg-zinc-50 px-4 py-10 font-secondary dark:bg-zinc-950">
+        <Button variant="outline" size="icon" className="fixed top-4 right-4" onClick={() => setIsDark((current) => !current)} aria-label={isDark ? "Use light mode" : "Use dark mode"}>
+          {isDark ? <Sun /> : <Moon />}
+        </Button>
+        <section className="w-[min(100%,42rem)] overflow-hidden rounded-3xl border border-zinc-200/80 bg-white shadow-[0_24px_80px_rgba(0,0,0,.09)] dark:border-zinc-800 dark:bg-zinc-900" aria-labelledby="details-title">
+          <div className="border-b border-zinc-200/80 px-5 py-5 dark:border-zinc-800 sm:px-8 sm:py-7">
+            <p className="text-[11px] font-semibold tracking-[.16em] text-amber-700 uppercase dark:text-amber-400">Step 1 · Add details</p>
+            <h1 id="details-title" className="mt-2 text-2xl font-semibold tracking-[-.035em] text-zinc-950 dark:text-zinc-50 sm:text-3xl">Paste the booking details</h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">Add the booking confirmation or voucher notes. We’ll turn them into an editable draft, including the guest, voucher number, cottage, dates, and inclusions.</p>
+          </div>
+          <div className="p-5 sm:p-8">
+            <Field>
+              <FieldLabel htmlFor="voucher-source">Booking or voucher details</FieldLabel>
+              <Textarea
+                id="voucher-source"
+                className="min-h-52 resize-y bg-zinc-50 text-base leading-6 dark:bg-zinc-950"
+                value={voucherSource}
+                placeholder="Paste the complete booking confirmation here…"
+                disabled={isDrafting}
+                autoFocus
+                onChange={(event) => setVoucherSource(event.target.value)}
+              />
+              <FieldDescription>Payment, bank, UTR, phone, and policy details are excluded from the voucher.</FieldDescription>
+            </Field>
+            {isDrafting ? (
+              <div className="mt-5 rounded-2xl bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950/40 dark:text-amber-100" role="status">Reading the details and preparing an editable draft…</div>
+            ) : (
+              <div className="mt-5 grid gap-3 sm:grid-cols-[auto_1fr_auto]">
+                <Button type="button" variant="outline" onClick={pasteVoucherDetails}><ClipboardPaste />Paste</Button>
+                <Button type="button" onClick={draftVoucherWithAi} disabled={voucherSource.trim().length < 10}><Sparkles />Create editable draft</Button>
+                <Button type="button" variant="ghost" disabled={voucherSource.trim().length < 10} onClick={() => { setHasStartedEditing(true); setMobileStep(0); setDraftNotice(""); window.scrollTo({ top: 0, behavior: "smooth" }); }}><PencilLine />Enter manually</Button>
+              </div>
+            )}
+            {draftNotice && <p role="status" className="mt-4 flex items-start gap-2 text-sm leading-5 text-emerald-700 dark:text-emerald-400"><Check className="mt-0.5 size-4 shrink-0" />{draftNotice}</p>}
+            {exportError && <p role="alert" className="mt-4 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{exportError}</p>}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-dvh w-full bg-zinc-50/70 px-0 pb-8 dark:bg-zinc-950 sm:bg-transparent sm:px-[clamp(16px,3vw,48px)] sm:pb-20 sm:dark:bg-transparent">
       <header className="no-print sticky top-0 z-40 mx-0 flex items-center justify-between gap-4 border-b border-zinc-200/80 bg-white/90 px-4 py-3.5 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/90 sm:-mx-[clamp(16px,3vw,48px)] sm:px-[clamp(16px,3vw,48px)] sm:py-4">
@@ -538,6 +613,7 @@ export default function Home() {
           <h1 className="font-secondary text-lg font-semibold tracking-[-.02em] sm:text-xl">Gift voucher</h1>
         </div>
         <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" aria-label="Edit pasted details" onClick={() => { setHasStartedEditing(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Source</Button>
         <Button variant="outline" size="icon" onClick={() => setIsDark((current) => !current)} aria-label={isDark ? "Use light mode" : "Use dark mode"}>
           {isDark ? <Sun /> : <Moon />}
         </Button>
@@ -555,7 +631,7 @@ export default function Home() {
       {exportError && <div role="alert" className="no-print mx-4 mt-3 rounded-xl bg-destructive/10 px-4 py-3 font-secondary text-sm leading-5 text-destructive sm:mx-0 sm:mt-4 sm:rounded-none">{exportError}</div>}
       {downloadNotice && <div role="status" className="no-print mx-4 mt-3 rounded-xl bg-emerald-500/10 px-4 py-3 font-secondary text-sm leading-5 text-emerald-700 dark:text-emerald-400 sm:mx-0 sm:mt-4 sm:rounded-none">{downloadNotice}</div>}
 
-      <nav className="no-print px-4 pt-4 sm:hidden" aria-label="Voucher creation progress">
+      <nav className="no-print mx-auto w-full max-w-3xl px-4 pt-4 sm:px-0" aria-label="Voucher creation progress">
         <div className="mb-2.5 flex items-center justify-between">
           <p className="font-secondary text-xs font-semibold">Step {mobileStep + 1} of {mobileSteps.length}</p>
           <p className="font-secondary text-xs text-zinc-500">{mobileSteps[mobileStep]}</p>
@@ -565,73 +641,28 @@ export default function Home() {
         </div>
       </nav>
 
-      <div className="voucher-studio-layout mt-4 grid items-start gap-4 px-4 sm:mt-5 sm:gap-5 sm:px-0 lg:mt-8 xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-8">
-      <section className={`no-print ${mobileStep === 3 ? "hidden" : "block"} self-start overflow-hidden rounded-2xl border border-zinc-200/70 bg-white font-secondary shadow-[0_8px_28px_rgba(0,0,0,.05)] dark:border-zinc-800 dark:bg-zinc-900 sm:block sm:border-0 sm:shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] xl:sticky xl:top-24`} aria-labelledby="editor-title">
+      <div className={`voucher-studio-layout mt-4 grid items-start gap-4 px-4 sm:mt-5 sm:gap-5 sm:px-0 lg:mt-8 ${mobileStep === 3 ? "xl:grid-cols-1" : "xl:grid-cols-[400px_minmax(0,1fr)]"} xl:gap-8`}>
+      <section className={`no-print ${mobileStep === 3 ? "hidden" : "block"} self-start overflow-hidden rounded-2xl border border-zinc-200/70 bg-white font-secondary shadow-[0_8px_28px_rgba(0,0,0,.05)] dark:border-zinc-800 dark:bg-zinc-900 sm:border-0 sm:shadow-[0_1px_2px_rgba(0,0,0,.03),0_12px_32px_rgba(0,0,0,.04)] xl:sticky xl:top-24`} aria-labelledby="editor-title">
         <div className="px-4 py-4 sm:px-6 sm:py-6">
           <div className="mb-2.5 flex items-center justify-between gap-3 sm:mb-3">
-            <p className="font-secondary text-[11px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Live editor</p>
+            <p className="font-secondary text-[11px] font-semibold tracking-[.16em] text-zinc-500 uppercase">Step {mobileStep + 1} of 4</p>
             <Badge variant="outline"><span className="mr-1.5 size-1.5 rounded-full bg-emerald-500" />Live preview</Badge>
           </div>
-          <h2 id="editor-title" className="font-secondary text-xl font-semibold tracking-[-.02em] text-zinc-950 dark:text-zinc-50 sm:text-2xl"><span className="sm:hidden">{mobileSteps[mobileStep]}</span><span className="hidden sm:inline">Customize your voucher</span></h2>
-          <p className="mt-1.5 font-secondary text-sm leading-5 text-zinc-500 dark:text-zinc-400 sm:mt-2"><span className="sm:hidden">Complete this step, then continue to build your voucher.</span><span className="hidden sm:inline">Update the recipient and stay details. Every change appears on the canvas instantly.</span></p>
+          <h2 id="editor-title" className="font-secondary text-xl font-semibold tracking-[-.02em] text-zinc-950 dark:text-zinc-50 sm:text-2xl">{mobileSteps[mobileStep]}</h2>
+          <p className="mt-1.5 font-secondary text-sm leading-5 text-zinc-500 dark:text-zinc-400 sm:mt-2">Complete this section, then continue. Your changes appear on the preview instantly.</p>
         </div>
         <div className="bg-zinc-50/70 px-3 pb-3 pt-px dark:bg-zinc-950/60 sm:px-5 sm:pb-5 sm:pt-0">
-        <div className={`${mobileStep === 0 ? "block" : "hidden"} relative mt-3 overflow-hidden rounded-xl border border-amber-200/80 bg-[linear-gradient(145deg,rgba(255,251,235,.96),rgba(254,243,199,.66))] p-4 shadow-xs dark:border-amber-900/60 dark:bg-[linear-gradient(145deg,rgba(69,26,3,.34),rgba(24,24,27,.85))] sm:mt-4 sm:block`}>
-          {isDrafting && <span aria-hidden="true" className="ai-draft-sheen absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-white/55 to-transparent dark:via-amber-200/10" />}
-          <div className="relative flex items-start gap-3">
-            <span className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-200/80 text-amber-950 dark:bg-amber-900/70 dark:text-amber-100 ${isDrafting ? "ai-sparkle" : ""}`}><Sparkles className="size-4" /></span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">Create with AI</p>
-                <Badge variant="secondary">Primary</Badge>
-              </div>
-              <p className="mt-1 text-xs leading-5 text-zinc-600 dark:text-zinc-400">Paste the full booking confirmation. AI will extract only the guest-facing voucher details.</p>
-            </div>
-          </div>
-          <Textarea
-            className="relative mt-3 max-h-56 min-h-32 bg-white/90 dark:bg-zinc-950/90"
-            value={voucherSource}
-            placeholder="Paste booking confirmation or voucher details here…"
-            aria-label="Booking or voucher details"
-            disabled={isDrafting}
-            onChange={(event) => setVoucherSource(event.target.value)}
-          />
-          {isDrafting ? (
-            <div className="relative mt-3 grid grid-cols-3 gap-2" role="status" aria-label="Creating voucher draft">
-              {["Reading details", "Shaping voucher", "Preparing draft"].map((label, index) => (
-                <div key={label} className="rounded-lg border border-amber-200/70 bg-white/70 px-2 py-2 text-center dark:border-amber-900/50 dark:bg-zinc-950/60">
-                  <span className="ai-stage-dot mx-auto mb-1.5 block size-1.5 rounded-full bg-amber-600" style={{ animationDelay: `${index * 650}ms` }} />
-                  <span className="text-[10px] font-medium leading-3 text-zinc-600 dark:text-zinc-300">{label}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="relative mt-3 grid grid-cols-[auto_1fr] gap-2">
-              <Button type="button" variant="outline" onClick={pasteVoucherDetails}><ClipboardPaste />Paste</Button>
-              <Button type="button" onClick={draftVoucherWithAi} disabled={voucherSource.trim().length < 10}><Sparkles />Create voucher draft</Button>
-            </div>
-          )}
-          {draftNotice && <p role="status" className="relative mt-3 flex items-start gap-2 text-xs leading-5 text-emerald-700 dark:text-emerald-400"><Check className="mt-0.5 size-3.5 shrink-0" />{draftNotice}</p>}
-          {draftNotes.length > 0 && (
-            <ul className="relative mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-amber-800 dark:text-amber-300">
-              {draftNotes.map((note) => <li key={note}>{note}</li>)}
-            </ul>
-          )}
-          <p className="relative mt-2 text-[11px] leading-4 text-zinc-500">Payment, bank, UTR, phone, and policy details stay out of the voucher. Always confirm the extracted dates and inclusions.</p>
-        </div>
-        <div className={`${mobileStep === 0 ? "flex" : "hidden"} mt-4 items-center gap-3 sm:flex`}>
-          <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-          <p className="text-[10px] font-semibold tracking-[.14em] text-zinc-500 uppercase">Fine-tune manually</p>
-          <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-        </div>
-        <Accordion value={editorSections} onValueChange={setEditorSections}>
-          <div className={`${mobileStep === 0 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 shadow-xs dark:bg-zinc-900 sm:mt-4 sm:block sm:px-3 sm:transition-shadow sm:hover:shadow-sm`}>
-          <AccordionItem value="message">
-            <AccordionTrigger className="hover:no-underline">Message</AccordionTrigger>
-            <AccordionContent>
-              <div className="pt-2 sm:px-1 sm:pt-3">
+        {draftNotes.length > 0 && (
+          <ul className="mt-4 list-disc space-y-1 rounded-xl bg-amber-50 px-7 py-3 text-xs leading-5 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            {draftNotes.map((note) => <li key={note}>{note}</li>)}
+          </ul>
+        )}
+        <div>
+          <div className={`${mobileStep === 0 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 py-4 shadow-xs dark:bg-zinc-900 sm:mt-4 sm:px-4`}>
+              <div>
+              <h3 className="mb-4 text-base font-semibold">Message</h3>
               <FieldSet>
-                <FieldLegend>Voucher copy</FieldLegend>
+                <FieldLegend className="sr-only">Voucher copy</FieldLegend>
                 <EditorField id="front-title" label="Title" value={content.frontTitle} multiline disabled onChange={update("frontTitle")} />
                 <Field>
                   <div className="flex items-center justify-between gap-3">
@@ -648,20 +679,17 @@ export default function Home() {
                 <EditorField id="sender" label="Sender" value={content.sender} placeholder="Enter sender name" onChange={update("sender")} />
               </FieldSet>
               </div>
-            </AccordionContent>
-          </AccordionItem>
           </div>
 
-          <div className={`${mobileStep === 1 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 shadow-xs dark:bg-zinc-900 sm:block sm:px-3 sm:transition-shadow sm:hover:shadow-sm`}>
-          <AccordionItem value="voucher">
-            <AccordionTrigger className="hover:no-underline">Voucher</AccordionTrigger>
-            <AccordionContent>
-            <div className="pt-2 sm:px-1 sm:pt-3">
+          <div className={`${mobileStep === 1 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 py-4 shadow-xs dark:bg-zinc-900 sm:mt-4 sm:px-4`}>
+            <div>
+              <h3 className="mb-4 text-base font-semibold">Cottage &amp; voucher</h3>
               <FieldSet>
-              <FieldLegend>Voucher &amp; inclusions</FieldLegend>
+              <FieldLegend className="sr-only">Voucher &amp; inclusions</FieldLegend>
               <EditorField id="back-title" label="Voucher title" value={content.backTitle} disabled onChange={update("backTitle")} />
+              <EditorField id="voucher-number" label="Voucher number" value={content.voucherNumber} placeholder="e.g. GV-2026-014" onChange={update("voucherNumber")} />
               <Field>
-                <FieldLabel htmlFor="villa-type">Villa type</FieldLabel>
+                <FieldLabel htmlFor="villa-type">Cottage</FieldLabel>
                 <Select value={content.villaType} onValueChange={(value) => value && update("villaType")(value)}>
                   <SelectTrigger id="villa-type" className="w-full"><SelectValue placeholder="Select a villa" /></SelectTrigger>
                   <SelectContent>
@@ -702,17 +730,13 @@ export default function Home() {
               </Field>
               </FieldSet>
             </div>
-            </AccordionContent>
-          </AccordionItem>
           </div>
 
-          <div className={`${mobileStep === 2 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 shadow-xs dark:bg-zinc-900 sm:block sm:px-3 sm:transition-shadow sm:hover:shadow-sm`}>
-          <AccordionItem value="stay">
-            <AccordionTrigger className="hover:no-underline">Stay</AccordionTrigger>
-            <AccordionContent>
-            <div className="pt-2 sm:px-1 sm:pt-3">
+          <div className={`${mobileStep === 2 ? "block" : "hidden"} mt-3 rounded-xl bg-white px-4 py-4 shadow-xs dark:bg-zinc-900 sm:mt-4 sm:px-4`}>
+            <div>
+              <h3 className="mb-4 text-base font-semibold">Guest &amp; stay</h3>
               <FieldSet>
-              <FieldLegend>Guest &amp; stay</FieldLegend>
+              <FieldLegend className="sr-only">Guest &amp; stay</FieldLegend>
               <Field>
                 <div className="flex items-center justify-between gap-3">
                   <FieldLabel htmlFor="guest-name">Guest name</FieldLabel>
@@ -752,11 +776,9 @@ export default function Home() {
               )}
               </FieldSet>
             </div>
-            </AccordionContent>
-          </AccordionItem>
           </div>
-        </Accordion>
-        <div className="sticky bottom-0 mt-3 flex gap-2.5 border-t border-zinc-200 bg-zinc-50/95 pt-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
+        </div>
+        <div className="sticky bottom-0 mt-3 flex gap-2.5 border-t border-zinc-200 bg-zinc-50/95 pt-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
           <Button variant="outline" className="flex-1" onClick={() => changeMobileStep(mobileStep - 1)} disabled={mobileStep === 0}>Back</Button>
           <Button className="flex-1" onClick={() => changeMobileStep(mobileStep + 1)}>Continue</Button>
         </div>
