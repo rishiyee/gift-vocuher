@@ -17,7 +17,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { VoucherPages } from "@/components/voucher/voucher-pages";
 import { initialVoucherContent as initialContent, type AiVoucherDraft, type VoucherContent, type VoucherPageIndex } from "@/lib/voucher";
 
-const APP_PIN = "1947";
+const PIN_LENGTH = 4;
+type SavedVoucher = { id: string; voucherNumber: string; guestName: string; content: VoucherContent; updatedAt: string };
 const VOUCHER_STORAGE_KEY = "gift-voucher-content-v2";
 const DEFAULT_MESSAGE = "Wishing you both a lifetime of love, laughter, and beautiful moments together. May this little getaway be the beginning of countless wonderful journeys and cherished memories.";
 
@@ -85,9 +86,9 @@ function DateEditorField({ id, label, value, onChange }: { id: string; label: st
 
 export default function Home() {
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [pin, setPin] = useState<string[]>(() => Array(APP_PIN.length).fill(""));
+  const [pin, setPin] = useState<string[]>(() => Array(PIN_LENGTH).fill(""));
   const [pinError, setPinError] = useState("");
-  const pinRef = useRef<string[]>(Array(APP_PIN.length).fill(""));
+  const pinRef = useRef<string[]>(Array(PIN_LENGTH).fill(""));
   const pinInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const [content, setContent] = useState<VoucherContent>(initialContent);
   const [isDark, setIsDark] = useState(false);
@@ -106,6 +107,8 @@ export default function Home() {
   const [isDrafting, setIsDrafting] = useState(false);
   const [draftNotice, setDraftNotice] = useState("");
   const [draftNotes, setDraftNotes] = useState<string[]>([]);
+  const [savedVouchers, setSavedVouchers] = useState<SavedVoucher[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
   const update = <Key extends keyof typeof initialContent>(key: Key) => (value: (typeof initialContent)[Key]) => setContent((current) => ({ ...current, [key]: value }));
   const selectedInclusions = [
     content.bbqDinner && "BBQ Dinner",
@@ -169,14 +172,23 @@ export default function Home() {
     window.localStorage.setItem("gift-voucher-theme", isDark ? "dark" : "light");
   }, [hasHydrated, isDark]);
 
-  function unlockApp(candidate: string) {
-    if (candidate === APP_PIN) {
+  async function unlockApp(candidate: string) {
+    try {
+      const response = await fetch("/api/voucher/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: candidate }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "The editor could not be unlocked.");
       setIsUnlocked(true);
       setPinError("");
+      void loadSavedVouchers();
       return;
+    } catch (error) {
+      setPinError(error instanceof Error ? error.message : "The editor could not be unlocked.");
     }
-    setPinError("Incorrect password. Please try again.");
-    const emptyPin = Array<string>(APP_PIN.length).fill("");
+    const emptyPin = Array<string>(PIN_LENGTH).fill("");
     pinRef.current = emptyPin;
     setPin(emptyPin);
     window.setTimeout(() => focusPinInput(0), 0);
@@ -198,24 +210,68 @@ export default function Home() {
     setPin(nextPin);
     if (pinError) setPinError("");
 
-    if (digit && index < APP_PIN.length - 1) {
+    if (digit && index < PIN_LENGTH - 1) {
       focusPinInput(index + 1);
       window.requestAnimationFrame(() => focusPinInput(index + 1));
     }
     if (nextPin.every(Boolean)) {
-      unlockApp(nextPin.join(""));
+      void unlockApp(nextPin.join(""));
     }
   }
 
   function pastePin(value: string) {
-    const pastedPin = value.replace(/\D/g, "").slice(0, APP_PIN.length);
+    const pastedPin = value.replace(/\D/g, "").slice(0, PIN_LENGTH);
     if (!pastedPin) return;
-    const nextPin = Array.from({ length: APP_PIN.length }, (_, index) => pastedPin[index] ?? "");
+    const nextPin = Array.from({ length: PIN_LENGTH }, (_, index) => pastedPin[index] ?? "");
     pinRef.current = nextPin;
     setPin(nextPin);
     setPinError("");
-    if (pastedPin.length === APP_PIN.length) unlockApp(pastedPin);
+    if (pastedPin.length === PIN_LENGTH) void unlockApp(pastedPin);
     else focusPinInput(pastedPin.length);
+  }
+
+  async function loadSavedVouchers() {
+    try {
+      const response = await fetch("/api/vouchers", { cache: "no-store" });
+      if (!response.ok) return;
+      const result = await response.json() as { vouchers?: SavedVoucher[] };
+      setSavedVouchers(result.vouchers ?? []);
+    } catch (error) {
+      console.error("Loading saved vouchers failed.", error);
+    }
+  }
+
+  async function saveVoucher() {
+    if (!validateVoucher()) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/vouchers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "The voucher could not be saved.");
+      setDownloadNotice("Voucher details saved to the database.");
+      setExportError("");
+      await loadSavedVouchers();
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "The voucher could not be saved.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function openSavedVoucher(id: string) {
+    const saved = savedVouchers.find((voucher) => voucher.id === id);
+    if (!saved) return;
+    setContent(saved.content);
+    setInclusionsVerified(true);
+    setMobileStep(0);
+    setMobileShareFile(null);
+    setPreparationRequested(false);
+    setExportError("");
+    setDownloadNotice(`Loaded voucher ${saved.voucherNumber}.`);
   }
 
   async function pasteInto(field: "message" | "guestName") {
@@ -461,7 +517,7 @@ export default function Home() {
             <Field>
               <FieldLabel>Four-digit password</FieldLabel>
               <div className="flex gap-3" role="group" aria-label="Four-digit password" aria-describedby={pinError ? "pin-error" : undefined}>
-                {Array.from({ length: APP_PIN.length }, (_, index) => (
+                {Array.from({ length: PIN_LENGTH }, (_, index) => (
                   <Input
                     key={index}
                     ref={(element) => { pinInputRefs.current[index] = element; }}
@@ -551,6 +607,11 @@ export default function Home() {
         </div>
         <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" aria-label="Edit pasted details" onClick={() => { setHasStartedEditing(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Source</Button>
+        <select aria-label="Open saved voucher" defaultValue="" onChange={(event) => { openSavedVoucher(event.target.value); event.target.value = ""; }} className="max-w-32 rounded-md border border-zinc-200 bg-white px-2 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-900 sm:max-w-52">
+          <option value="">Saved vouchers</option>
+          {savedVouchers.map((voucher) => <option key={voucher.id} value={voucher.id}>{voucher.voucherNumber} · {voucher.guestName}</option>)}
+        </select>
+        <Button variant="outline" size="sm" onClick={saveVoucher} disabled={isSaving}>{isSaving ? "Saving…" : "Save"}</Button>
         <Button variant="outline" size="icon" onClick={() => setIsDark((current) => !current)} aria-label={isDark ? "Use light mode" : "Use dark mode"}>
           {isDark ? <Sun /> : <Moon />}
         </Button>

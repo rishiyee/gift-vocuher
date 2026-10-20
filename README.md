@@ -16,6 +16,20 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Saving voucher details
+
+The editor can save and reopen completed vouchers from a PostgreSQL database. Set these server-only variables in `.env.local` (and in your deployment environment):
+
+```bash
+DATABASE_URL=postgresql://user:password@host/database?sslmode=require
+VOUCHER_ADMIN_PIN=your-four-digit-pin
+VOUCHER_SESSION_SECRET=replace-with-a-random-secret-at-least-32-characters-long
+```
+
+Run [`db/001_create_vouchers.sql`](db/001_create_vouchers.sql) against the database once, using a direct connection for schema changes. Then restart the server. Unlock the editor, fill in the voucher, select **Save**, and use **Saved vouchers** to reopen it. Saving the same voucher number updates that record. The original pasted booking text is not stored.
+
+Keep `DATABASE_URL`, the PIN, and the session secret on the server; do not use a `NEXT_PUBLIC_` prefix. The browser's previous local draft remains available until you save it. Only the most recently updated 100 vouchers appear in the menu.
+
 ## AI voucher drafting
 
 The editor can turn pasted booking confirmations into an editable voucher draft with Gemini Flash. Add the API key to `.env.local` (never expose it with a `NEXT_PUBLIC_` prefix):
