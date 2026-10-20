@@ -98,6 +98,7 @@ export default function Home() {
   const [inclusionsVerified, setInclusionsVerified] = useState(false);
   const [exportError, setExportError] = useState("");
   const [downloadNotice, setDownloadNotice] = useState("");
+  const [preparedDesktopPdf, setPreparedDesktopPdf] = useState<{ file: File; contentKey: string } | null>(null);
   const [mobileStep, setMobileStep] = useState(0);
   const [hasStartedEditing, setHasStartedEditing] = useState(false);
   const [mobileShareFile, setMobileShareFile] = useState<File | null>(null);
@@ -386,12 +387,14 @@ export default function Home() {
 
   async function downloadVoucherPdf() {
     setDownloadNotice("");
+    setExportError("");
     if (!validateVoucher()) return;
     setExporting("all");
     try {
       const { blob, fileName } = await requestVoucherPdf([0, 1]);
+      setPreparedDesktopPdf({ file: new File([blob], fileName, { type: "application/pdf" }), contentKey: JSON.stringify(content) });
       downloadPdfBlob(blob, fileName);
-      setDownloadNotice("Voucher PDF downloaded.");
+      setDownloadNotice("Your voucher PDF is ready. If the download did not start, use the button below.");
     } catch (error) {
       console.error("Voucher PDF generation failed.", error);
       setExportError(error instanceof Error ? error.message : "The PDF could not be downloaded. Please try again.");
@@ -619,7 +622,10 @@ export default function Home() {
         </div>
       </header>
       {exportError && <div role="alert" className="no-print mx-4 mt-3 rounded-xl bg-destructive/10 px-4 py-3 font-secondary text-sm leading-5 text-destructive sm:mx-0 sm:mt-4 sm:rounded-none">{exportError}</div>}
-      {downloadNotice && <div role="status" className="no-print mx-4 mt-3 rounded-xl bg-emerald-500/10 px-4 py-3 font-secondary text-sm leading-5 text-emerald-700 dark:text-emerald-400 sm:mx-0 sm:mt-4 sm:rounded-none">{downloadNotice}</div>}
+      {downloadNotice && <div role="status" className="no-print mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-emerald-500/10 px-4 py-3 font-secondary text-sm leading-5 text-emerald-700 dark:text-emerald-400 sm:mx-0 sm:mt-4 sm:rounded-none">
+        <span>{downloadNotice}</span>
+        {preparedDesktopPdf?.contentKey === JSON.stringify(content) && <Button type="button" size="sm" variant="outline" onClick={() => downloadPdfBlob(preparedDesktopPdf.file, preparedDesktopPdf.file.name)}>Download PDF</Button>}
+      </div>}
 
       <nav className="no-print mx-auto w-full max-w-3xl px-4 pt-4 sm:px-0" aria-label="Voucher creation progress">
         <div className="mb-2.5 flex items-center justify-between">
