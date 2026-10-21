@@ -1,9 +1,18 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Gift Voucher Canvas",
-  description: "Two-page gift voucher design canvas",
+  title: "Gift Voucher Studio",
+  description: "Create, edit, and share guest gift vouchers.",
+  appleWebApp: { capable: true, title: "Gift Voucher", statusBarStyle: "default" },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f7f7f3" },
+    { media: "(prefers-color-scheme: dark)", color: "#090d0b" },
+  ],
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
