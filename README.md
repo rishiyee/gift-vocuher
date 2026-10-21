@@ -26,9 +26,9 @@ VOUCHER_ADMIN_PIN=your-four-digit-pin
 VOUCHER_SESSION_SECRET=replace-with-a-random-secret-at-least-32-characters-long
 ```
 
-Run [`db/001_create_vouchers.sql`](db/001_create_vouchers.sql) against the database once, using a direct connection for schema changes. Then restart the server. Unlock the editor, fill in the voucher, select **Save**, and use **Saved vouchers** to reopen it. Saving the same voucher number updates that record. The original pasted booking text is not stored.
+Run [`db/001_create_vouchers.sql`](db/001_create_vouchers.sql) against the database once, using a direct connection for schema changes. Then restart the server. Unlock the editor, fill in the voucher, select **Save**, and use **Vouchers** to browse, edit, share, or delete saved vouchers. Saving the same voucher number updates that record. The original pasted booking text is not stored.
 
-Keep `DATABASE_URL`, the PIN, and the session secret on the server; do not use a `NEXT_PUBLIC_` prefix. The browser's previous local draft remains available until you save it. Only the most recently updated 100 vouchers appear in the menu.
+Keep `DATABASE_URL`, the PIN, and the session secret on the server; do not use a `NEXT_PUBLIC_` prefix. The browser's previous local draft remains available until you save it. The Vouchers library lists all saved vouchers and supports searching by guest name or voucher number.
 
 ## AI voucher drafting
 
