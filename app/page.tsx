@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { VoucherPages } from "@/components/voucher/voucher-pages";
 import { InstallApp } from "@/components/pwa/install-app";
-import { initialVoucherContent as initialContent, type AiVoucherDraft, type VoucherContent, type VoucherPageIndex } from "@/lib/voucher";
+import { initialVoucherContent as initialContent, type AiVoucherDraft, type VoucherContent, type VoucherLayout, type VoucherPageIndex } from "@/lib/voucher";
 
 const PIN_LENGTH = 4;
 type SavedVoucher = { id: string; voucherNumber: string; guestName: string; content: VoucherContent; updatedAt: string };
@@ -96,6 +96,7 @@ export default function Home() {
   const [content, setContent] = useState<VoucherContent>(initialContent);
   const [isDark, setIsDark] = useState(false);
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [voucherLayout, setVoucherLayout] = useState<VoucherLayout>("single");
   const [exporting, setExporting] = useState<number | "all" | null>(null);
   const [pasteStatus, setPasteStatus] = useState("");
   const [inclusionsVerified, setInclusionsVerified] = useState(false);
@@ -169,6 +170,8 @@ export default function Home() {
       if (cancelled) return;
       setContent(readSavedContent());
       setIsDark(window.localStorage.getItem("gift-voucher-theme") === "dark");
+      const savedLayout = window.localStorage.getItem("gift-voucher-layout");
+      if (savedLayout === "single" || savedLayout === "double") setVoucherLayout(savedLayout);
       setHasHydrated(true);
     });
     return () => {
@@ -180,6 +183,11 @@ export default function Home() {
     if (!hasHydrated) return;
     window.localStorage.setItem(VOUCHER_STORAGE_KEY, JSON.stringify(content));
   }, [content, hasHydrated]);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    window.localStorage.setItem("gift-voucher-layout", voucherLayout);
+  }, [hasHydrated, voucherLayout]);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -471,11 +479,11 @@ export default function Home() {
     }
   }
 
-  async function requestVoucherPdf(indices: VoucherPageIndex[], voucherContent: VoucherContent = content) {
+  async function requestVoucherPdf(indices: VoucherPageIndex[], voucherContent: VoucherContent = content, layout: VoucherLayout = voucherLayout) {
     const response = await fetch("/api/voucher/pdf", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: voucherContent, indices }),
+      body: JSON.stringify({ content: voucherContent, indices, layout }),
     });
     if (!response.ok) {
       const result = await response.json().catch(() => null) as { error?: string; code?: string; requestId?: string } | null;
@@ -483,7 +491,7 @@ export default function Home() {
       const code = result?.code ? ` (${result.code})` : "";
       throw new Error(`${result?.error || "The PDF could not be generated."}${code}${reference}`);
     }
-    return { blob: await response.blob(), fileName: createPdfFileName(indices, voucherContent) };
+    return { blob: await response.blob(), fileName: createPdfFileName(indices, voucherContent, layout) };
   }
 
   async function downloadVoucherPdf() {
@@ -493,7 +501,7 @@ export default function Home() {
     setExporting("all");
     try {
       const { blob, fileName } = await requestVoucherPdf([0, 1]);
-      setPreparedDesktopPdf({ file: new File([blob], fileName, { type: "application/pdf" }), contentKey: JSON.stringify(content) });
+      setPreparedDesktopPdf({ file: new File([blob], fileName, { type: "application/pdf" }), contentKey: JSON.stringify({ content, layout: voucherLayout }) });
       downloadPdfBlob(blob, fileName);
       setDownloadNotice("Your voucher PDF is ready. If the download did not start, use the button below.");
     } catch (error) {
@@ -504,10 +512,10 @@ export default function Home() {
     }
   }
 
-  function createPdfFileName(indices: VoucherPageIndex[], voucherContent: VoucherContent = content) {
+  function createPdfFileName(indices: VoucherPageIndex[], voucherContent: VoucherContent = content, layout: VoucherLayout = voucherLayout) {
     const guestFileName = voucherContent.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Guest";
     const voucherFileName = voucherContent.voucherNumber.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "No-number";
-    const pageSuffix = indices.length === 2 ? " - Front and Back" : indices[0] === 0 ? " - Front" : " - Back";
+    const pageSuffix = layout === "single" ? " - Single Page" : indices.length === 2 ? " - Front and Back" : indices[0] === 0 ? " - Front" : " - Back";
     return `${guestFileName} - ${voucherFileName}${pageSuffix} - ${format(new Date(), "yyyy-MM-dd_HH-mm-ss")}.pdf`;
   }
 
@@ -749,8 +757,8 @@ export default function Home() {
         setIsLibraryOpen(open);
         if (open) void loadSavedVouchers();
       }}>
-        <DialogContent className="studio-library flex max-h-[88dvh] max-w-3xl flex-col gap-4 overflow-hidden p-5 sm:p-6">
-          <DialogHeader>
+        <DialogContent className="studio-library flex h-[90dvh] max-h-[90dvh] max-w-3xl flex-col gap-4 overflow-hidden p-5 sm:h-auto sm:max-h-[88dvh] sm:p-6">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="text-xl">Voucher library</DialogTitle>
             <DialogDescription>Find a saved voucher to edit, share, or delete.</DialogDescription>
           </DialogHeader>
@@ -759,7 +767,7 @@ export default function Home() {
             <Input aria-label="Search vouchers" placeholder="Search by guest or voucher number" value={librarySearch} onChange={(event) => setLibrarySearch(event.target.value)} className="h-10 pl-9" />
           </div>
           {libraryError && <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{libraryError}</p>}
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-2 pr-1 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]">
             {filteredSavedVouchers.length === 0 ? (
               <div className="rounded-xl border border-dashed p-8 text-center">
                 <LibraryBig className="mx-auto size-6 text-muted-foreground" />
@@ -772,10 +780,10 @@ export default function Home() {
               return (
                 <article key={voucher.id} className="studio-voucher-row rounded-2xl border bg-card p-4 sm:p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <h3 className="truncate font-semibold">{voucher.guestName}</h3>
                       <p className="mt-0.5 text-sm text-muted-foreground">Voucher {voucher.voucherNumber}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className="mt-1 break-words text-xs text-muted-foreground">
                         {voucher.content.voucherType === "dated"
                           ? `${voucher.content.checkInDate} · ${voucher.content.checkOutDate}`
                           : `Redeem by ${voucher.content.redeemDate}`}
@@ -783,13 +791,13 @@ export default function Home() {
                       </p>
                     </div>
                     {!isConfirmingDelete ? (
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" size="sm" variant="outline" onClick={() => openSavedVoucher(voucher.id)}><PencilLine />Edit</Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => shareIsReady ? void sharePreparedVoucher(voucher) : void prepareSavedVoucherShare(voucher)} disabled={sharingVoucherId === voucher.id}>
+                      <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap">
+                        <Button className="w-full sm:w-auto" type="button" size="sm" variant="outline" onClick={() => openSavedVoucher(voucher.id)}><PencilLine />Edit</Button>
+                        <Button className="w-full sm:w-auto" type="button" size="sm" variant="outline" onClick={() => shareIsReady ? void sharePreparedVoucher(voucher) : void prepareSavedVoucherShare(voucher)} disabled={sharingVoucherId === voucher.id}>
                           {shareIsReady ? <Share2 /> : <Download />}
                           {sharingVoucherId === voucher.id ? "Preparing…" : shareIsReady ? "Share PDF" : "Prepare share"}
                         </Button>
-                        <Button type="button" size="sm" variant="destructive" onClick={() => setConfirmDeleteId(voucher.id)}><Trash2 />Delete</Button>
+                        <Button className="w-full sm:w-auto" type="button" size="sm" variant="destructive" onClick={() => setConfirmDeleteId(voucher.id)}><Trash2 />Delete</Button>
                       </div>
                     ) : (
                       <div className="flex flex-wrap items-center gap-2 rounded-lg bg-destructive/5 p-2">
@@ -811,7 +819,7 @@ export default function Home() {
       {exportError && <div role="alert" className="no-print mx-4 mt-3 rounded-xl bg-destructive/10 px-4 py-3 font-secondary text-sm leading-5 text-destructive sm:mx-0 sm:mt-4 sm:rounded-none">{exportError}</div>}
       {downloadNotice && <div role="status" className="no-print mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-emerald-500/10 px-4 py-3 font-secondary text-sm leading-5 text-emerald-700 dark:text-emerald-400 sm:mx-0 sm:mt-4 sm:rounded-none">
         <span>{downloadNotice}</span>
-        {preparedDesktopPdf?.contentKey === JSON.stringify(content) && <Button type="button" size="sm" variant="outline" onClick={() => downloadPdfBlob(preparedDesktopPdf.file, preparedDesktopPdf.file.name)}>Download PDF</Button>}
+        {preparedDesktopPdf?.contentKey === JSON.stringify({ content, layout: voucherLayout }) && <Button type="button" size="sm" variant="outline" onClick={() => downloadPdfBlob(preparedDesktopPdf.file, preparedDesktopPdf.file.name)}>Download PDF</Button>}
       </div>}
 
       <nav className="studio-stepper no-print mx-auto mt-5 w-full max-w-5xl px-4 py-4 sm:px-5" aria-label="Voucher creation progress">
@@ -974,7 +982,10 @@ export default function Home() {
             <h2 className="font-secondary text-sm font-semibold text-zinc-900 dark:text-zinc-100">Canvas preview</h2>
             <p className="mt-0.5 font-secondary text-xs text-zinc-500 dark:text-zinc-400">Review both sides before saving.</p>
           </div>
-          <Badge variant="secondary">2 pages</Badge>
+          <div className="voucher-print-chrome flex items-center gap-2" role="group" aria-label="Voucher print layout">
+            <Button type="button" size="sm" variant={voucherLayout === "single" ? "default" : "outline"} onClick={() => setVoucherLayout("single")}>Single page</Button>
+            <Button type="button" size="sm" variant={voucherLayout === "double" ? "default" : "outline"} onClick={() => setVoucherLayout("double")}>Double page</Button>
+          </div>
         </div>
         {preparationRequested && !mobileShareFile && (
           <div className="voucher-print-chrome rounded-xl bg-zinc-50 p-3 dark:bg-zinc-950/70 sm:hidden" aria-live="polite">
@@ -987,7 +998,7 @@ export default function Home() {
             </div>
           </div>
         )}
-        <VoucherPages content={content} interactivePreview />
+        <VoucherPages content={content} interactivePreview layout={voucherLayout} />
         <div className="voucher-print-chrome sticky bottom-0 -mx-4 -mb-4 grid grid-cols-[auto_1fr] gap-2.5 border-t border-zinc-200 bg-white/95 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:hidden">
           <Button variant="outline" onClick={() => changeMobileStep(2)}>Back</Button>
           {mobileShareFile ? (

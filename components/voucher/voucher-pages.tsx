@@ -1,13 +1,14 @@
 import Image from "next/image";
-import type { VoucherContent, VoucherPageIndex } from "@/lib/voucher";
+import type { VoucherContent, VoucherLayout, VoucherPageIndex } from "@/lib/voucher";
 
 type VoucherPagesProps = {
   content: VoucherContent;
   indices?: VoucherPageIndex[];
   interactivePreview?: boolean;
+  layout?: VoucherLayout;
 };
 
-export function VoucherPages({ content, indices = [0, 1], interactivePreview = false }: VoucherPagesProps) {
+export function VoucherPages({ content, indices = [0, 1], interactivePreview = false, layout = "double" }: VoucherPagesProps) {
   const selectedInclusions = [
     content.bbqDinner && "BBQ Dinner",
     content.candlelightDinner && "Candlelight dinner",
@@ -16,7 +17,7 @@ export function VoucherPages({ content, indices = [0, 1], interactivePreview = f
   ].filter((inclusion): inclusion is string => Boolean(inclusion));
 
   return (
-    <div className="voucher-print-pages grid gap-4 sm:gap-6 lg:gap-8">
+    <div className={`voucher-print-pages ${layout === "single" ? "voucher-single-pages" : "grid gap-4 sm:gap-6 lg:gap-8"}`}>
       {indices.map((index) => {
         const page = index === 0 ? "Front" : "Back";
         return (

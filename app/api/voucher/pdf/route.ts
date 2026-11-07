@@ -1,7 +1,7 @@
 import serverlessChromium from "@sparticuz/chromium";
 import { randomUUID } from "node:crypto";
 import { chromium } from "playwright-core";
-import { normalizeVoucherContent, normalizeVoucherPageIndices } from "@/lib/voucher";
+import { normalizeVoucherContent, normalizeVoucherLayout, normalizeVoucherPageIndices } from "@/lib/voucher";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -51,7 +51,8 @@ export async function POST(request: Request) {
 
   const content = normalizeVoucherContent(body.content);
   const indices = normalizeVoucherPageIndices(body.indices);
-  if (!content || !indices) {
+  const layout = normalizeVoucherLayout(body.layout);
+  if (!content || !indices || !layout) {
     return Response.json(
       { error: "Invalid voucher data.", code: "INVALID_VOUCHER_DATA", requestId },
       { status: 400, headers: { "Cache-Control": "no-store", "X-PDF-Request-Id": requestId } },
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
     const page = await browser.newPage();
     await page.addInitScript((data) => {
       window.__VOUCHER_PRINT_DATA__ = data;
-    }, { content, indices });
+    }, { content, indices, layout });
 
     stage = "navigation";
     await page.goto(printUrl.toString(), { waitUntil: "networkidle", timeout: 30_000 });
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
     await page.waitForFunction(() => document.fonts.status === "loaded" && Array.from(document.images).every((image) => image.complete && image.naturalWidth > 0), undefined, { timeout: 20_000 });
 
     stage = "pdf";
-    const pdf = await page.pdf({ width: "210mm", height: "99mm", margin: { top: 0, right: 0, bottom: 0, left: 0 }, preferCSSPageSize: true, printBackground: true });
+    const pdf = await page.pdf({ width: layout === "single" ? "279.4mm" : "210mm", height: layout === "single" ? "215.9mm" : "99mm", margin: { top: 0, right: 0, bottom: 0, left: 0 }, preferCSSPageSize: true, printBackground: true });
     console.info("Voucher PDF generated.", { requestId, durationMs: Date.now() - startedAt, pages: indices.length });
     return new Response(new Uint8Array(pdf), {
       headers: {

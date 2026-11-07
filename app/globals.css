@@ -110,8 +110,10 @@
     left: 0;
     width: 100%;
     max-width: 100%;
+    height: 90dvh;
     max-height: 90dvh;
     min-height: 280px;
+    box-sizing: border-box;
     padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
     border-radius: 1.5rem 1.5rem 0 0;
     transform: none;
@@ -120,6 +122,22 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .studio-voucher-row { transition: none; }
+}
+
+.voucher-single-pages {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  aspect-ratio: 279.4 / 215.9;
+}
+
+.voucher-single-pages .voucher-print-page {
+  min-height: 0;
+}
+
+.voucher-single-pages .voucher-canvas {
+  height: 100%;
+  aspect-ratio: auto;
 }
 
 @font-face { font-family: "Canela Trial"; src: url("/fonts/CANELA-THIN-TRIAL.OTF") format("opentype"); font-style: normal; font-weight: 100; font-display: swap; }
@@ -134,6 +152,15 @@
   @page {
     size: 210mm 99mm;
     margin: 0;
+  }
+
+  @page single-voucher {
+    size: Letter landscape;
+    margin: 0;
+  }
+
+  .voucher-print-layout-single {
+    page: single-voucher;
   }
 
   html,
@@ -186,6 +213,20 @@
     gap: 0 !important;
   }
 
+  .voucher-print-layout-single,
+  .voucher-print-layout-single .voucher-print-area,
+  .voucher-print-layout-single .voucher-print-pages {
+    width: 279.4mm !important;
+    max-width: 279.4mm !important;
+    height: 215.9mm !important;
+  }
+
+  .voucher-print-layout-single .voucher-print-pages {
+    display: grid !important;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 0 !important;
+  }
+
   .voucher-print-page {
     display: block !important;
     width: 210mm !important;
@@ -213,6 +254,19 @@
     box-shadow: none !important;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+  }
+
+  .voucher-print-layout-single .voucher-print-page {
+    width: 279.4mm !important;
+    height: auto !important;
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .voucher-print-layout-single .voucher-canvas {
+    width: 279.4mm !important;
+    height: 107.95mm !important;
+    aspect-ratio: auto !important;
   }
 }
 

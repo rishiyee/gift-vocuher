@@ -2,11 +2,12 @@
 
 import { useSyncExternalStore } from "react";
 import { VoucherPages } from "@/components/voucher/voucher-pages";
-import type { VoucherContent, VoucherPageIndex } from "@/lib/voucher";
+import type { VoucherContent, VoucherLayout, VoucherPageIndex } from "@/lib/voucher";
 
 type VoucherPrintData = {
   content: VoucherContent;
   indices: VoucherPageIndex[];
+  layout: VoucherLayout;
 };
 
 declare global {
@@ -25,9 +26,9 @@ export function VoucherPrintClient() {
   if (!data) return null;
 
   return (
-    <main className="voucher-studio-layout" data-pdf-ready="true">
+    <main className={`voucher-studio-layout voucher-print-layout-${data.layout}`} data-pdf-ready="true">
       <section className="voucher-print-area" aria-label="Voucher pages">
-        <VoucherPages content={data.content} indices={data.indices} />
+        <VoucherPages content={data.content} indices={data.indices} layout={data.layout} />
       </section>
     </main>
   );
