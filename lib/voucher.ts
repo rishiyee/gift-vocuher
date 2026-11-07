@@ -65,10 +65,10 @@ export const initialVoucherContent: VoucherContent = {
 
 export const voucherPageIndices = [0, 1] as const;
 export type VoucherPageIndex = (typeof voucherPageIndices)[number];
-export type VoucherLayout = "single" | "double";
+export type VoucherLayout = "single" | "double" | "canvas";
 
 export function normalizeVoucherLayout(value: unknown): VoucherLayout | null {
-  return value === "single" || value === "double" ? value : null;
+  return value === "single" || value === "double" || value === "canvas" ? value : null;
 }
 
 export function normalizeVoucherContent(value: unknown): VoucherContent | null {

@@ -140,6 +140,22 @@
   aspect-ratio: auto;
 }
 
+.voucher-canvas-pages {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  aspect-ratio: 4 / 3;
+}
+
+.voucher-canvas-pages .voucher-print-page {
+  min-height: 0;
+}
+
+.voucher-canvas-pages .voucher-canvas {
+  height: 100%;
+  aspect-ratio: auto;
+}
+
 @font-face { font-family: "Canela Trial"; src: url("/fonts/CANELA-THIN-TRIAL.OTF") format("opentype"); font-style: normal; font-weight: 100; font-display: swap; }
 @font-face { font-family: "Canela Trial"; src: url("/fonts/CANELA-LIGHT-TRIAL.OTF") format("opentype"); font-style: normal; font-weight: 300; font-display: swap; }
 @font-face { font-family: "Canela Trial"; src: url("/fonts/CANELA-REGULAR-TRIAL.OTF") format("opentype"); font-style: normal; font-weight: 400; font-display: swap; }
@@ -159,8 +175,17 @@
     margin: 0;
   }
 
+  @page canvas-voucher {
+    size: 12in 9in;
+    margin: 0;
+  }
+
   .voucher-print-layout-single {
     page: single-voucher;
+  }
+
+  .voucher-print-layout-canvas {
+    page: canvas-voucher;
   }
 
   html,
@@ -266,6 +291,33 @@
   .voucher-print-layout-single .voucher-canvas {
     width: 279.4mm !important;
     height: 107.95mm !important;
+    aspect-ratio: auto !important;
+  }
+
+  .voucher-print-layout-canvas,
+  .voucher-print-layout-canvas .voucher-print-area,
+  .voucher-print-layout-canvas .voucher-print-pages {
+    width: 304.8mm !important;
+    max-width: 304.8mm !important;
+    height: 228.6mm !important;
+  }
+
+  .voucher-print-layout-canvas .voucher-print-pages {
+    display: grid !important;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 0 !important;
+  }
+
+  .voucher-print-layout-canvas .voucher-print-page {
+    width: 304.8mm !important;
+    height: auto !important;
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .voucher-print-layout-canvas .voucher-canvas {
+    width: 304.8mm !important;
+    height: 114.3mm !important;
     aspect-ratio: auto !important;
   }
 }

@@ -171,7 +171,7 @@ export default function Home() {
       setContent(readSavedContent());
       setIsDark(window.localStorage.getItem("gift-voucher-theme") === "dark");
       const savedLayout = window.localStorage.getItem("gift-voucher-layout");
-      if (savedLayout === "single" || savedLayout === "double") setVoucherLayout(savedLayout);
+      if (savedLayout === "single" || savedLayout === "double" || savedLayout === "canvas") setVoucherLayout(savedLayout);
       setHasHydrated(true);
     });
     return () => {
@@ -515,7 +515,7 @@ export default function Home() {
   function createPdfFileName(indices: VoucherPageIndex[], voucherContent: VoucherContent = content, layout: VoucherLayout = voucherLayout) {
     const guestFileName = voucherContent.guestName.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "Guest";
     const voucherFileName = voucherContent.voucherNumber.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\.+$/, "") || "No-number";
-    const pageSuffix = layout === "single" ? " - Single Page" : indices.length === 2 ? " - Front and Back" : indices[0] === 0 ? " - Front" : " - Back";
+    const pageSuffix = layout === "single" ? " - Single Page" : layout === "canvas" ? " - 4x3 Canvas" : indices.length === 2 ? " - Front and Back" : indices[0] === 0 ? " - Front" : " - Back";
     return `${guestFileName} - ${voucherFileName}${pageSuffix} - ${format(new Date(), "yyyy-MM-dd_HH-mm-ss")}.pdf`;
   }
 
@@ -985,6 +985,7 @@ export default function Home() {
           <div className="voucher-print-chrome flex items-center gap-2" role="group" aria-label="Voucher print layout">
             <Button type="button" size="sm" variant={voucherLayout === "single" ? "default" : "outline"} onClick={() => setVoucherLayout("single")}>Single page</Button>
             <Button type="button" size="sm" variant={voucherLayout === "double" ? "default" : "outline"} onClick={() => setVoucherLayout("double")}>Double page</Button>
+            <Button type="button" size="sm" variant={voucherLayout === "canvas" ? "default" : "outline"} onClick={() => setVoucherLayout("canvas")}>4:3 canvas</Button>
           </div>
         </div>
         {preparationRequested && !mobileShareFile && (

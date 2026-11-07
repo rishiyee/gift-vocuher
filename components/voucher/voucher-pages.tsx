@@ -17,7 +17,7 @@ export function VoucherPages({ content, indices = [0, 1], interactivePreview = f
   ].filter((inclusion): inclusion is string => Boolean(inclusion));
 
   return (
-    <div className={`voucher-print-pages ${layout === "single" ? "voucher-single-pages" : "grid gap-4 sm:gap-6 lg:gap-8"}`}>
+    <div className={`voucher-print-pages ${layout === "single" ? "voucher-single-pages" : layout === "canvas" ? "voucher-canvas-pages" : "grid gap-4 sm:gap-6 lg:gap-8"}`}>
       {indices.map((index) => {
         const page = index === 0 ? "Front" : "Back";
         return (

@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     await page.waitForFunction(() => document.fonts.status === "loaded" && Array.from(document.images).every((image) => image.complete && image.naturalWidth > 0), undefined, { timeout: 20_000 });
 
     stage = "pdf";
-    const pdf = await page.pdf({ width: layout === "single" ? "279.4mm" : "210mm", height: layout === "single" ? "215.9mm" : "99mm", margin: { top: 0, right: 0, bottom: 0, left: 0 }, preferCSSPageSize: true, printBackground: true });
+    const pdf = await page.pdf({ width: layout === "single" ? "279.4mm" : layout === "canvas" ? "12in" : "210mm", height: layout === "single" ? "215.9mm" : layout === "canvas" ? "9in" : "99mm", margin: { top: 0, right: 0, bottom: 0, left: 0 }, preferCSSPageSize: true, printBackground: true });
     console.info("Voucher PDF generated.", { requestId, durationMs: Date.now() - startedAt, pages: indices.length });
     return new Response(new Uint8Array(pdf), {
       headers: {
